@@ -1,4 +1,4 @@
-import React from 'react';
+import { useState } from 'react';
 import { 
   View, 
   Text, 
@@ -9,7 +9,8 @@ import {
   KeyboardAvoidingView, 
   Platform,
   TouchableWithoutFeedback,
-  Keyboard
+  Keyboard,
+  Alert
 } from 'react-native';
 import { COLORS, SPACING, TYPOGRAPHY } from '../theme/theme';
 import { CustomInput } from '../components/Input';
@@ -17,10 +18,41 @@ import { CustomButton } from '../components/Button';
 import { Mail, Lock, ChevronLeft } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '../../supabase';
 
 const { width, height } = Dimensions.get('window');
 
 const LoginScreen = ({ navigation }: any) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Ошибка', 'Пожалуйста, введите почту и пароль');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        // Успешный вход — переходим в основное приложение
+        navigation.navigate('MainTabs');
+      }
+    } catch (error: any) {
+      Alert.alert('Ошибка входа', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -53,6 +85,7 @@ const LoginScreen = ({ navigation }: any) => {
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
             >
               <View style={styles.logoContainer}>
                 <LinearGradient
@@ -74,6 +107,10 @@ const LoginScreen = ({ navigation }: any) => {
                   placeholder="Введите ваш email" 
                   placeholderTextColor="rgba(255,255,255,0.3)"
                   leftIcon={<Mail color={COLORS.primary} size={20} />}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
                 />
                 
                 <CustomInput 
@@ -82,6 +119,8 @@ const LoginScreen = ({ navigation }: any) => {
                   placeholderTextColor="rgba(255,255,255,0.3)"
                   secureTextEntry
                   leftIcon={<Lock color={COLORS.primary} size={20} />}
+                  value={password}
+                  onChangeText={setPassword}
                 />
 
                 <TouchableOpacity style={styles.forgotContainer}>
@@ -90,7 +129,8 @@ const LoginScreen = ({ navigation }: any) => {
 
                 <CustomButton 
                   title="Войти" 
-                  onPress={() => navigation.navigate('MainTabs')}
+                  onPress={handleLogin}
+                  loading={loading}
                   style={styles.loginButton}
                 />
 

@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { MapPin, Activity, ShieldAlert } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../theme/theme';
 import { ScreenHeader } from '../components/Header';
 import { CustomButton } from '../components/Button';
+import { supabase } from '../../supabase';
 
 const FeatureCard = ({ icon: Icon, title, description }: any) => (
   <View style={styles.card}>
@@ -18,6 +19,26 @@ const FeatureCard = ({ icon: Icon, title, description }: any) => (
 );
 
 const AboutScreen = ({ navigation }: any) => {
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUser(data?.user || null));
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleAuthAction = async () => {
+    if (user) {
+      await supabase.auth.signOut();
+    } else {
+      navigation.navigate('Login');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <ScreenHeader title="О приложении" onBack={() => navigation.goBack()} />
@@ -42,9 +63,10 @@ const AboutScreen = ({ navigation }: any) => {
       
       <View style={styles.footer}>
         <CustomButton 
-          title="Войти" 
-          onPress={() => navigation.navigate('Login')}
-          style={styles.button}
+          title={user ? "Выйти из аккаунта" : "Войти"} 
+          onPress={handleAuthAction}
+          variant={user ? "secondary" : "primary"}
+          style={user ? { backgroundColor: '#FF3B30', width: '100%' } : { width: '100%' }}
         />
       </View>
     </View>
@@ -54,7 +76,7 @@ const AboutScreen = ({ navigation }: any) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.background,
   },
   scrollContent: {
     padding: SPACING.xl,
@@ -62,7 +84,7 @@ const styles = StyleSheet.create({
   },
   card: {
     flexDirection: 'row',
-    backgroundColor: COLORS.secondaryBackground,
+    backgroundColor: COLORS.surface,
     padding: SPACING.lg,
     borderRadius: RADIUS.card,
     alignItems: 'center',
@@ -72,7 +94,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: COLORS.white,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -1,261 +1,251 @@
-import React from 'react';
-import { View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity } from 'react-native';
-import { COLORS, SPACING, TYPOGRAPHY } from '../theme/theme';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { MapPin, Bell, Users, HeartPulse, Leaf, AppWindow } from 'lucide-react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Dimensions,
+  ActivityIndicator,
+  Alert
+} from 'react-native';
+import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
+import * as Location from 'expo-location';
+import { supabase } from '../../supabase';
+import { COLORS, SHADOWS, RADIUS, SPACING } from '../theme/theme';
+import { Shield, Navigation2, Map as MapIcon, Check, X, AlertTriangle, UserMinus, Trash2 } from 'lucide-react-native';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
-const AnimalStatusItem = ({ name, status, color, icon }: any) => (
-  <TouchableOpacity style={styles.statusItem}>
-    <View style={styles.statusIconWrapper}>
-      <Text style={styles.emojiIcon}>{icon}</Text>
-    </View>
-    <View style={styles.statusContent}>
-      <Text style={styles.statusName}>{name}</Text>
-      <Text style={[styles.statusText, { color }]}>{status}</Text>
-    </View>
-    <View style={[styles.statusDot, { backgroundColor: color }]} />
-  </TouchableOpacity>
-);
+interface TrackerItem {
+  id: string;
+  lat: number;
+  lng: number;
+  heading?: number;
+  name: string;
+  type: string;
+  isAnimal: boolean;
+  updated_at: string;
+}
 
-const AnimalPin = ({ x, y, icon, color }: any) => (
-  <View style={[styles.pinContainer, { left: x, top: y }]}>
-    <View style={[styles.pinCircle, { borderColor: color }]}>
-       <Text style={styles.pinEmoji}>{icon}</Text>
-    </View>
-  </View>
-);
-
-const MapScreen = ({ navigation }: any) => {
-  return (
-    <View style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        {/* Header */}
-        <View style={styles.header}>
-            <View style={styles.headerTitleRow}>
-                <Leaf color={COLORS.green} size={24} fill={COLORS.green} />
-                <Text style={styles.headerTitle}>AgroNexus</Text>
-            </View>
-            <View style={styles.animalsBadge}>
-                <Text style={styles.badgeText}>12 животных</Text>
-            </View>
-        </View>
-
-        {/* Map Area */}
-        <View style={styles.mapContainer}>
-          <View style={styles.mapGrid}>
-            {/* Grid Pattern */}
-            <View style={styles.gridOverlay}>
-                {[...Array(10)].map((_, i) => (
-                    <View key={`v-${i}`} style={[styles.gridLine, { left: `${i * 11}%`, width: 1, height: '100%' }]} />
-                ))}
-                {[...Array(10)].map((_, i) => (
-                    <View key={`h-${i}`} style={[styles.gridLine, { top: `${i * 11}%`, height: 1, width: '100%' }]} />
-                ))}
-            </View>
-
-            {/* Geofence Dashed Area */}
-            <View style={styles.geofenceArea}>
-                <View style={styles.dashedBorder} />
-            </View>
-
-            {/* Animal Pins */}
-            <AnimalPin x={70} y={120} icon="🐄" color={COLORS.green} />
-            <AnimalPin x={width - 150} y={50} icon="🐑" color={COLORS.primary} />
-            <AnimalPin x={width - 240} y={180} icon="🐖" color={COLORS.green} />
-            <AnimalPin x={width - 100} y={230} icon="🐂" color={COLORS.red} />
-            <AnimalPin x={80} y={260} icon="🐐" color={COLORS.green} />
-          </View>
-        </View>
-
-        {/* Status List Label */}
-        <Text style={styles.listLabel}>СТАТУС СТАДА</Text>
-        
-        <ScrollView style={styles.listContainer} showsVerticalScrollIndicator={false}>
-          <AnimalStatusItem 
-            name="Буян #04" 
-            status="Вышел за геофенс!" 
-            color={COLORS.red} 
-            icon="🐂"
-          />
-          <AnimalStatusItem 
-            name="Отара #2" 
-            status="Низкая активность" 
-            color={COLORS.primary} 
-            icon="🐑"
-          />
-          <AnimalStatusItem 
-            name="Зорька #01" 
-            status="Всё в норме" 
-            color={COLORS.green} 
-            icon="🐄"
-          />
-        </ScrollView>
-      </SafeAreaView>
-    </View>
-  );
+const isPointInPolygon = (point: { lat: number, lng: number }, polygon: any[]) => {
+  let x = point.lat, y = point.lng;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    let xi = polygon[i].latitude, yi = polygon[i].longitude;
+    let xj = polygon[j].latitude, yj = polygon[j].longitude;
+    let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  header: {
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: TYPOGRAPHY.weights.bold,
-    color: COLORS.white,
-  },
-  animalsBadge: {
-    backgroundColor: 'rgba(255, 107, 0, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 0, 0.3)',
-  },
-  badgeText: {
-    color: COLORS.primary,
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  mapContainer: {
-    width: width - SPACING.lg * 2,
-    height: 340,
-    backgroundColor: '#0A0E0A',
-    alignSelf: 'center',
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-    marginBottom: SPACING.lg,
-  },
-  mapGrid: {
-    flex: 1,
-  },
-  gridOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.15,
-  },
-  gridLine: {
-    position: 'absolute',
-    backgroundColor: COLORS.green,
-  },
-  geofenceArea: {
-    width: '80%',
-    height: '60%',
-    alignSelf: 'center',
-    marginTop: 60,
-  },
-  dashedBorder: {
-    flex: 1,
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderStyle: 'dashed',
-    borderRadius: 30,
-  },
-  geofenceBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#CC5500',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderTopLeftRadius: 15,
-  },
-  geofenceText: {
-    color: '#000',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  pinContainer: {
-    position: 'absolute',
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pinCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pinEmoji: {
-    fontSize: 18,
-  },
-  listLabel: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.md,
-  },
-  listContainer: {
-    paddingHorizontal: SPACING.lg,
-  },
-  statusItem: {
-    height: 80,
-    backgroundColor: COLORS.surface,
-    borderRadius: 20,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)',
-  },
-  statusIconWrapper: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emojiIcon: {
-    fontSize: 24,
-  },
-  statusContent: {
-    flex: 1,
-    marginLeft: 15,
-  },
-  statusName: {
-    fontSize: 17,
-    fontWeight: TYPOGRAPHY.weights.bold,
-    color: COLORS.white,
-    marginBottom: 4,
-  },
-  statusText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginLeft: 10,
-  },
-});
+export default function MapScreen() {
+  const mapRef = useRef<MapView>(null);
+  const [items, setItems] = useState<TrackerItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userLoc, setUserLoc] = useState<any>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = useState<TrackerItem | null>(null);
 
-export default MapScreen;
+  // ГЕОЗОНЫ
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [newFencePoints, setNewFencePoints] = useState<any[]>([]);
+  const [savedFences, setSavedFences] = useState<any[]>([]);
+  const [alertItems, setAlertItems] = useState<string[]>([]);
+  const [selectedFence, setSelectedFence] = useState<any | null>(null);
+
+  useEffect(() => {
+    startTracking();
+    fetchFences();
+    const interval = setInterval(fetchData, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('map-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'locations' }, () => {
+        fetchData();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [savedFences]);
+
+  const startTracking = async () => {
+    let { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return;
+    const loc = await Location.getCurrentPositionAsync({});
+    setUserLoc(loc.coords);
+    setLoading(false);
+  };
+
+  const fetchFences = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase.from('geofences').select('*').eq('owner_id', user.id);
+    if (data) setSavedFences(data);
+  };
+
+  const handleMapPress = (e: any) => {
+    if (isDrawing) {
+        const { latitude, longitude } = e.nativeEvent.coordinate;
+        setNewFencePoints([...newFencePoints, { latitude, longitude }]);
+    } else {
+        setSelectedItem(null);
+        setSelectedFence(null);
+    }
+  };
+
+  const saveGeofence = async () => {
+    if (newFencePoints.length < 3) {
+      Alert.alert('Ошибка', 'Нужно минимум 3 точки');
+      return;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from('geofences').insert({
+      owner_id: user?.id,
+      name: `Зона ${savedFences.length + 1}`,
+      coordinates: newFencePoints
+    });
+    setIsDrawing(false);
+    setNewFencePoints([]);
+    fetchFences();
+  };
+
+  const fetchData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setCurrentUserId(user.id);
+
+      const { data: animals } = await supabase.from('animals').select(`id, name, type`).eq('owner_id', user.id);
+      const { data: permissions } = await supabase.from('tracking_permissions').select('owner_id').eq('viewer_id', user.id);
+      const animalIds = animals?.map(a => a.id) || [];
+      const userIds = permissions?.map(p => p.owner_id) || [];
+      userIds.push(user.id);
+
+      let queryParts = [];
+      if (animalIds.length > 0) queryParts.push(`animal_id.in.(${animalIds.join(',')})`);
+      if (userIds.length > 0) queryParts.push(`user_id.in.(${userIds.join(',')})`);
+      const { data: locs } = await supabase.from('locations').select('*').or(queryParts.join(','));
+      
+      const currentItems: TrackerItem[] = [];
+      const newAlerts: string[] = [];
+
+      locs?.forEach(l => {
+        const isAnml = !!l.animal_id;
+        const itemName = isAnml ? animals?.find(a => a.id === l.animal_id)?.name || 'Объект' : (l.user_id === user.id ? 'Я (Вы)' : 'Друг');
+        const trackerItem: TrackerItem = { id: isAnml ? l.animal_id : l.user_id, name: itemName, lat: l.lat, lng: l.lng, heading: l.heading || 0, type: isAnml ? 'Animal' : 'User', isAnimal: isAnml, updated_at: l.updated_at };
+        currentItems.push(trackerItem);
+
+        if (savedFences.length > 0) {
+            const isInside = savedFences.some(f => isPointInPolygon({ lat: l.lat, lng: l.lng }, f.coordinates));
+            if (!isInside) newAlerts.push(trackerItem.name);
+        }
+      });
+      setItems(currentItems);
+      setAlertItems(newAlerts);
+    } catch (e) { console.log(e); }
+  };
+
+  const getEmoji = (type: string, isAnimal: boolean) => {
+    if (!isAnimal) return '👤';
+    switch (type.toLowerCase()) {
+      case 'корова': return '🐄';
+      case 'лошадь': return '🐎';
+      case 'овца': return '🐑';
+      case 'коза': return '🐐';
+      default: return '🐾';
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>{isDrawing ? 'Режим зон' : 'Карта'}</Text>
+          <Text style={styles.subtitle}>{isDrawing ? 'Ставьте точки на карте' : `${items.length} объекта в сети`}</Text>
+        </View>
+        <TouchableOpacity style={[styles.iconBtn, isDrawing && { backgroundColor: COLORS.primary }]} onPress={() => { setIsDrawing(!isDrawing); setNewFencePoints([]); setSelectedFence(null); }}>
+          {isDrawing ? <X color="#000" size={20} /> : <MapIcon color={COLORS.primary} size={20} />}
+        </TouchableOpacity>
+      </View>
+
+      {alertItems.length > 0 && !isDrawing && (
+        <View style={styles.dangerAlert}>
+          <AlertTriangle color="#FFF" size={20} />
+          <Text style={styles.dangerText}>Выход из зоны: {alertItems.join(', ')}</Text>
+        </View>
+      )}
+
+      <View style={styles.mapWrapper}>
+        <MapView ref={mapRef} provider={PROVIDER_GOOGLE} style={styles.map} mapType="hybrid" onPress={handleMapPress} initialRegion={{ latitude: 41.2995, longitude: 69.2401, latitudeDelta: 0.1, longitudeDelta: 0.1 }}>
+          {savedFences.map(f => (
+            <Polygon key={f.id} coordinates={f.coordinates} fillColor={selectedFence?.id === f.id ? "rgba(255, 30, 0, 0.3)" : "rgba(255,107,0,0.2)"} strokeColor={selectedFence?.id === f.id ? "#FF3B30" : COLORS.primary} strokeWidth={2} tappable={true} onPress={() => setSelectedFence(f)} />
+          ))}
+          {isDrawing && newFencePoints.length > 0 && <Polygon coordinates={newFencePoints} fillColor="rgba(59,130,246,0.3)" strokeColor="#3B82F6" strokeWidth={3} />}
+          {isDrawing && newFencePoints.map((p, i) => <Marker key={i} coordinate={p}><View style={styles.drawPoint} /></Marker>)}
+          {items.map(item => (
+            <Marker key={item.id} coordinate={{ latitude: item.lat, longitude: item.lng }} onPress={() => setSelectedItem(item)} anchor={{ x: 0.5, y: 0.5 }}>
+              {item.id === currentUserId ? (
+                <View style={styles.meMarkerWrapper}><View style={[styles.directionArrow, { transform: [{ rotate: `${item.heading}deg` }] }]}><View style={styles.arrowPointer} /></View><View style={styles.mePulse} /><View style={styles.meDot} /></View>
+              ) : (
+                <View style={[styles.markerContainer, item.isAnimal ? styles.animalBorder : styles.userBorder, selectedItem?.id === item.id && { backgroundColor: '#FFF' }]}><Text style={styles.markerText}>{getEmoji(item.type, item.isAnimal)}</Text></View>
+              )}
+            </Marker>
+          ))}
+        </MapView>
+        
+        {isDrawing && newFencePoints.length >= 3 && <TouchableOpacity style={styles.saveFenceBtn} onPress={saveGeofence}><Check color="#000" size={24} /><Text style={styles.saveFenceText}>Сохранить зону</Text></TouchableOpacity>}
+        <TouchableOpacity style={styles.myLocationBtn} onPress={() => { if (userLoc) mapRef.current?.animateToRegion({ latitude: userLoc.latitude, longitude: userLoc.longitude, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 1000); }}><Navigation2 color={COLORS.primary} size={24} fill={COLORS.primary} /></TouchableOpacity>
+      </View>
+
+      {selectedFence && (
+          <TouchableOpacity style={styles.deleteFenceBtn} onPress={async () => {
+              Alert.alert('Удаление', 'Удалить эту геозону?', [{ text: 'Отмена' }, { text: 'Да', style: 'destructive', onPress: async () => {
+                  await supabase.from('geofences').delete().eq('id', selectedFence.id);
+                  fetchFences(); setSelectedFence(null);
+              }}]);
+          }}><Trash2 color="#FFF" size={20} /><Text style={styles.deleteFenceText}>Удалить зону</Text></TouchableOpacity>
+      )}
+
+      {selectedItem && selectedItem.id !== currentUserId && (
+          <TouchableOpacity style={styles.disconnectBtn} onPress={async () => {
+              Alert.alert('Отключение', `Разорвать связь с ${selectedItem.name}?`, [{ text: 'Отмена' }, { text: 'Да', style: 'destructive', onPress: async () => {
+                  await supabase.from('tracking_permissions').delete().or(`owner_id.eq.${selectedItem.id},viewer_id.eq.${selectedItem.id}`);
+                  setSelectedItem(null); fetchData();
+              }}]);
+          }}><UserMinus color="#FFF" size={20} /><Text style={styles.disconnectText}>Отключить доступ</Text></TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.background },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingTop: 60, paddingBottom: 20 },
+  title: { fontSize: 26, fontWeight: 'bold', color: '#FFF' },
+  subtitle: { fontSize: 14, color: COLORS.textSecondary, marginTop: 2 },
+  iconBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  mapWrapper: { flex: 1, marginHorizontal: 16, marginBottom: 20, borderRadius: 32, overflow: 'hidden', backgroundColor: COLORS.surface, borderWidth: 1, borderColor: 'rgba(255,107,0,0.1)', ...SHADOWS.medium },
+  map: { flex: 1 },
+  dangerAlert: { position: 'absolute', top: 120, left: 24, right: 24, zIndex: 10, backgroundColor: '#FF3B30', padding: 12, borderRadius: RADIUS.card, flexDirection: 'row', alignItems: 'center', gap: 10, ...SHADOWS.medium },
+  dangerText: { color: '#FFF', fontWeight: 'bold', fontSize: 13 },
+  markerContainer: { width: 42, height: 42, borderRadius: RADIUS.card, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 2, ...SHADOWS.small },
+  animalBorder: { borderColor: COLORS.primary },
+  userBorder: { borderColor: '#FFA500' },
+  meMarkerWrapper: { width: 60, height: 60, justifyContent: 'center', alignItems: 'center' },
+  meDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#3B82F6', borderWidth: 2, borderColor: '#FFF', zIndex: 2 },
+  mePulse: { position: 'absolute', width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(59, 130, 246, 0.2)', zIndex: 1 },
+  directionArrow: { position: 'absolute', width: 50, height: 50, justifyContent: 'center', alignItems: 'center', zIndex: 0 },
+  arrowPointer: { width: 0, height: 0, backgroundColor: 'transparent', borderStyle: 'solid', borderLeftWidth: 8, borderRightWidth: 8, borderBottomWidth: 15, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: 'rgba(59, 130, 246, 0.8)', transform: [{ translateY: -20 }] },
+  markerText: { fontSize: 22 },
+  myLocationBtn: { position: 'absolute', bottom: 24, right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.primary, ...SHADOWS.medium },
+  drawPoint: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FFF', borderWidth: 2, borderColor: '#3B82F6' },
+  saveFenceBtn: { position: 'absolute', bottom: 24, left: 24, backgroundColor: COLORS.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 30, flexDirection: 'row', alignItems: 'center', gap: 8, ...SHADOWS.medium, zIndex: 100 },
+  saveFenceText: { color: '#000', fontWeight: 'bold' },
+  disconnectBtn: { backgroundColor: '#FF3B30', marginHorizontal: 24, marginBottom: 20, padding: 16, borderRadius: RADIUS.card, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, ...SHADOWS.medium },
+  disconnectText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
+  deleteFenceBtn: { position: 'absolute', top: 120, alignSelf: 'center', backgroundColor: '#FF3B30', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 8, ...SHADOWS.medium, zIndex: 100 },
+  deleteFenceText: { color: '#FFF', fontWeight: 'bold' }
+});

@@ -1,4 +1,4 @@
-import React from 'react';
+import { useState } from 'react';
 import { 
   View, 
   Text, 
@@ -9,18 +9,59 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableWithoutFeedback,
-  Keyboard
+  Keyboard,
+  Alert
 } from 'react-native';
 import { COLORS, SPACING, TYPOGRAPHY } from '../theme/theme';
 import { CustomInput } from '../components/Input';
 import { CustomButton } from '../components/Button';
-import { Mail, Lock, User, ChevronLeft } from 'lucide-react-native';
+import { Mail, Lock, ChevronLeft } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '../../supabase';
 
 const { width, height } = Dimensions.get('window');
 
 const RegisterScreen = ({ navigation }: any) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleRegister = async () => {
+    if (!email || !password || !firstName) {
+      Alert.alert('Ошибка', 'Пожалуйста, заполните обязательные поля');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            first_name: firstName,
+            last_name: lastName,
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        // Так как подтверждение почты отключено, пользователь может сразу входить
+        // Supabase автоматически авторизует его после signUp
+        navigation.navigate('MainTabs');
+      }
+    } catch (error: any) {
+      Alert.alert('Ошибка регистрации', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <KeyboardAvoidingView 
@@ -78,6 +119,8 @@ const RegisterScreen = ({ navigation }: any) => {
                       placeholder="Имя" 
                       placeholderTextColor="rgba(255,255,255,0.3)"
                       containerStyle={styles.flex1}
+                      value={firstName}
+                      onChangeText={setFirstName}
                     />
                     <View style={{ width: SPACING.md }} />
                     <CustomInput 
@@ -85,6 +128,8 @@ const RegisterScreen = ({ navigation }: any) => {
                       placeholder="Фамилия" 
                       placeholderTextColor="rgba(255,255,255,0.3)"
                       containerStyle={styles.flex1}
+                      value={lastName}
+                      onChangeText={setLastName}
                     />
                   </View>
 
@@ -93,6 +138,10 @@ const RegisterScreen = ({ navigation }: any) => {
                     placeholder="Введите ваш email" 
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     leftIcon={<Mail color={COLORS.primary} size={20} />}
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
                   />
                   
                   <CustomInput 
@@ -101,11 +150,14 @@ const RegisterScreen = ({ navigation }: any) => {
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     secureTextEntry
                     leftIcon={<Lock color={COLORS.primary} size={20} />}
+                    value={password}
+                    onChangeText={setPassword}
                   />
 
                   <CustomButton 
-                    title="Продолжить" 
-                    onPress={() => navigation.navigate('MainTabs')}
+                    title="Зарегистрироваться" 
+                    onPress={handleRegister}
+                    loading={loading}
                     style={styles.loginButton}
                   />
 

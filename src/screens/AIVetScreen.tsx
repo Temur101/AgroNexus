@@ -41,23 +41,6 @@ const AIVetScreen = ({ navigation }: any) => {
             </Text>
           </View>
 
-          {/* Pattern Chart Card */}
-          <View style={styles.patternCard}>
-            <Text style={styles.patternLabel}>ПАТТЕРН ДВИЖЕНИЯ</Text>
-            <View style={styles.chartContainer}>
-                {/* Visual Chart Simulation */}
-                <View style={styles.gridLine} />
-                <View style={styles.chartPath}>
-                    <View style={[styles.pathSegment, { width: 40, transform: [{ rotate: '20deg' }], top: 30 }]} />
-                    <View style={[styles.pathSegment, { width: 40, transform: [{ rotate: '-10deg' }], left: 35, top: 25 }]} />
-                    <View style={[styles.pathSegment, { width: 50, transform: [{ rotate: '40deg' }], left: 70, top: 40 }]} />
-                    <View style={[styles.pathSegment, { width: 60, transform: [{ rotate: '-30deg' }], left: 110, top: 15 }]} />
-                    <View style={[styles.pathSegment, { width: 50, transform: [{ rotate: '20deg' }], left: 165, top: 30 }]} />
-                    <View style={[styles.pathSegment, { width: 40, transform: [{ rotate: '-10deg' }], left: 210, top: 25 }]} />
-                    <View style={styles.chartDot} />
-                </View>
-            </View>
-          </View>
 
           {/* Recommendation Card */}
           <View style={styles.recommendCard}>
@@ -168,55 +151,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.7)',
     lineHeight: 20,
-  },
-  patternCard: {
-    backgroundColor: COLORS.surface,
-    padding: 20,
-    borderRadius: 20,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)',
-  },
-  patternLabel: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginBottom: 20,
-  },
-  chartContainer: {
-    height: 80,
-    width: '100%',
-    justifyContent: 'center',
-  },
-  gridLine: {
-    height: 1,
-    backgroundColor: COLORS.green,
-    opacity: 0.2,
-    borderStyle: 'dashed',
-    width: '100%',
-  },
-  chartPath: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-  },
-  pathSegment: {
-    position: 'absolute',
-    height: 2,
-    backgroundColor: COLORS.primary,
-  },
-  chartDot: {
-    position: 'absolute',
-    right: 20,
-    top: 20,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: COLORS.primary,
-    shadowColor: COLORS.primary,
-    shadowRadius: 5,
-    shadowOpacity: 0.5,
   },
   recommendCard: {
     backgroundColor: 'rgba(16, 185, 129, 0.05)',

@@ -18,22 +18,38 @@ import { CustomButton } from '../components/Button';
 import { supabase } from '../../supabase';
 
 const AddAnimalScreen = ({ navigation }: any) => {
+  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
   const [animalType, setAnimalType] = useState('Корова');
   const [trackerId, setTrackerId] = useState('');
+  const [mode, setMode] = useState<'gps' | 'demo' | null>(null);
   
   // Demo Mode State
   const [searchQuery, setSearchQuery] = useState('');
   const [users, setUsers] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
-  const [showUserList, setShowUserList] = useState(false);
 
   const types = ['Корова', 'Лошадь', 'Овца', 'Коза', 'Бык'];
 
-  const handleSave = async () => {
-    if (!name ) {
-      Alert.alert('Ошибка', 'Введите имя животного');
+  const handleNext = () => {
+    if (step === 1) {
+      if (!name.trim()) {
+        Alert.alert('Ошибка', 'Введите имя животного');
+        return;
+      }
+      setStep(2);
+    }
+  };
+
+  const selectMode = (m: 'gps' | 'demo') => {
+    setMode(m);
+    setStep(3);
+  };
+
+  const handleSaveGPS = async () => {
+    if (!trackerId.trim()) {
+      Alert.alert('Ошибка', 'Введите IMEI устройства');
       return;
     }
 
@@ -44,14 +60,14 @@ const AddAnimalScreen = ({ navigation }: any) => {
       const { error } = await supabase.from('animals').insert({
         name,
         type: animalType,
-        tracker_id: trackerId || null,
+        tracker_id: trackerId,
         owner_id: user?.id
       });
 
       if (error) throw error;
 
       Alert.alert('Успех', 'Животное успешно добавлено', [
-        { text: 'OK', onPress: () => navigation.goBack() }
+        { text: 'OK', onPress: () => navigation.navigate('MainTabs', { screen: 'Herd' }) }
       ]);
     } catch (error: any) {
       Alert.alert('Ошибка сохранения', error.message);
@@ -69,7 +85,6 @@ const AddAnimalScreen = ({ navigation }: any) => {
 
     setSearching(true);
     try {
-      // Ищем в новой таблице профилей по Email или Имени
       const { data, error } = await supabase
         .from('profiles')
         .select('id, email, first_name')
@@ -77,7 +92,6 @@ const AddAnimalScreen = ({ navigation }: any) => {
         .limit(5);
 
       if (error) throw error;
-      
       setUsers(data || []);
     } catch (e) {
       console.log('Search error:', e);
@@ -94,13 +108,16 @@ const AddAnimalScreen = ({ navigation }: any) => {
       const { error } = await supabase.from('tracking_requests').insert({
         from_user_id: user?.id,
         to_user_id: toUserId,
-        status: 'pending'
+        status: 'pending',
+        animal_name: name,
+        animal_type: animalType
       });
 
       if (error) throw error;
 
-      Alert.alert('Запрос отправлен', 'Ожидайте подтверждения от пользователя в демо-режиме.');
-      setShowUserList(false);
+      Alert.alert('Запрос отправлен', 'Животное будет создано автоматически после того, как пользователь подтвердит запрос.', [
+        { text: 'Ясно', onPress: () => navigation.navigate('MainTabs') }
+      ]);
     } catch (error: any) {
       Alert.alert('Ошибка', error.message);
     } finally {
@@ -108,50 +125,113 @@ const AddAnimalScreen = ({ navigation }: any) => {
     }
   };
 
-  const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
+  const renderStep1 = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Шаг 1: О животным</Text>
+      <CustomInput 
+        label="Кличка животного"
+        placeholder="Например: Буян"
+        value={name}
+        onChangeText={setName}
+      />
+      <Text style={styles.label}>Тип животного</Text>
+      <View style={styles.typeGrid}>
+        {types.map((type) => (
+          <TouchableOpacity 
+            key={type}
+            style={[styles.typeItem, animalType === type && styles.typeItemActive]}
+            onPress={() => setAnimalType(type)}
+          >
+            <Text style={[styles.typeText, animalType === type && styles.typeTextActive]}>{type}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <CustomButton title="Далее" onPress={handleNext} style={styles.nextBtn} />
+    </View>
+  );
 
-  useEffect(() => {
-    loadRequests();
-  }, []);
+  const renderStep2 = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Шаг 2: Способ слежения</Text>
+      <TouchableOpacity style={styles.modeCard} onPress={() => selectMode('gps')}>
+        <View style={styles.modeIcon}>
+          <Clipboard color={COLORS.primary} size={24} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.modeName}>GPS Трекер</Text>
+          <Text style={styles.modeDesc}>Реальное устройство (Traccar/IMEI)</Text>
+        </View>
+      </TouchableOpacity>
 
-  const loadRequests = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    // Загружаем запросы вместе с данными профиля отправителя
-    const { data } = await supabase
-      .from('tracking_requests')
-      .select('*, requester:profiles!tracking_requests_from_user_id_fkey(first_name, email)')
-      .eq('to_user_id', user.id)
-      .eq('status', 'pending');
-    
-    setIncomingRequests(data || []);
-  };
-
-  const acceptRequest = async (requestId: string, fromUserId: string) => {
-    setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
+      <TouchableOpacity style={styles.modeCard} onPress={() => selectMode('demo')}>
+        <View style={styles.modeIcon}>
+          <Smartphone color={COLORS.secondary} size={24} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.modeName}>Демо (Телефон)</Text>
+          <Text style={styles.modeDesc}>Слежение за телефоном другого человека</Text>
+        </View>
+      </TouchableOpacity>
       
-      // 1. Создаем разрешение
-      await supabase.from('tracking_permissions').insert({
-        owner_id: user?.id,
-        viewer_id: fromUserId
-      });
+      <TouchableOpacity onPress={() => setStep(1)} style={styles.backLink}>
+        <Text style={styles.backLinkText}>Назад</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
-      // 2. Обновляем статус запроса
-      await supabase.from('tracking_requests')
-        .update({ status: 'accepted' })
-        .eq('id', requestId);
+  const renderStep3GPS = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Шаг 3: Настройка GPS</Text>
+      <CustomInput 
+        label="IMEI / Device ID"
+        placeholder="Например: 8663..."
+        leftIcon={<Clipboard color={COLORS.textSecondary} size={20} />}
+        value={trackerId}
+        onChangeText={setTrackerId}
+      />
+      <Text style={styles.sectionSub}>Введите уникальный номер вашего устройства Traccar</Text>
+      <CustomButton title="Сохранить и завершить" onPress={handleSaveGPS} loading={loading} />
+      <TouchableOpacity onPress={() => setStep(2)} style={styles.backLink}>
+        <Text style={styles.backLinkText}>Назад</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
-      Alert.alert('Готово', 'Вы теперь делитесь геопозицией с этим пользователем.');
-      loadRequests();
-    } catch (e: any) {
-      Alert.alert('Ошибка', e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const renderStep3Demo = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Шаг 3: Выбор пользователя</Text>
+      <Text style={styles.sectionSub}>Найдите человека, за которым хотите следить под видом животного</Text>
+      <CustomInput 
+        placeholder="Email или Имя пользователя..."
+        value={searchQuery}
+        onChangeText={searchUsers}
+        leftIcon={<Search color={COLORS.primary} size={20} />}
+      />
+      
+      <ScrollView style={styles.userList}>
+        {searching ? (
+          <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} />
+        ) : (
+          users.map(u => (
+            <TouchableOpacity key={u.id} style={styles.userItem} onPress={() => sendTrackingRequest(u.id)}>
+              <User color={COLORS.textSecondary} size={18} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.userName}>{u.first_name || 'Без имени'}</Text>
+                <Text style={{ color: COLORS.textSecondary, fontSize: 12 }}>{u.email}</Text>
+              </View>
+              <View style={styles.requestBtn}>
+                <Smartphone color={COLORS.primary} size={16} />
+                <Text style={styles.requestBtnText}>Выбрать</Text>
+              </View>
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
+      <TouchableOpacity onPress={() => setStep(2)} style={styles.backLink}>
+        <Text style={styles.backLinkText}>Назад</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -164,133 +244,13 @@ const AddAnimalScreen = ({ navigation }: any) => {
           <View style={{ width: 40 }} />
         </View>
 
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
-        >
-          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Основная информация</Text>
-              
-              <CustomInput 
-                label="Кличка животного"
-                placeholder="Например: Зорька"
-                placeholderTextColor="rgba(255,255,255,0.2)"
-                value={name}
-                onChangeText={setName}
-              />
-
-              <Text style={styles.label}>Тип животного</Text>
-              <View style={styles.typeGrid}>
-                {types.map((type) => (
-                  <TouchableOpacity 
-                    key={type}
-                    style={[
-                      styles.typeItem,
-                      animalType === type && styles.typeItemActive
-                    ]}
-                    onPress={() => setAnimalType(type)}
-                  >
-                    <Text style={[
-                      styles.typeText,
-                      animalType === type && styles.typeTextActive
-                    ]}>{type}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>GPS Трекер</Text>
-              <Text style={styles.sectionSub}>Привяжите IMEI устройства для Traccar</Text>
-              
-              <CustomInput 
-                label="IMEI / Device ID"
-                placeholder="Например: 8663..."
-                placeholderTextColor="rgba(255,255,255,0.2)"
-                leftIcon={<Clipboard color={COLORS.textSecondary} size={20} />}
-                value={trackerId}
-                onChangeText={setTrackerId}
-              />
-            </View>
-
-            {incomingRequests.length > 0 && (
-              <>
-                <View style={styles.divider} />
-                <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: COLORS.secondary }]}>Входящие запросы (Демо-режим)</Text>
-                  {incomingRequests.map(req => (
-                    <View key={req.id} style={styles.userItem}>
-                      <User color={COLORS.textSecondary} size={18} />
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                          <Text style={styles.userName}>{req.requester?.first_name || 'Пользователь'}</Text>
-                          <Text style={{ color: COLORS.textSecondary, fontSize: 12 }}>{req.requester?.email}</Text>
-                      </View>
-                      <TouchableOpacity style={styles.acceptBtn} onPress={() => acceptRequest(req.id, req.from_user_id)}>
-                         <Text style={styles.acceptBtnText}>Разрешить</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              </>
-            )}
-
-            <View style={styles.divider} />
-
-            <View style={styles.section}>
-              <View style={styles.rowBetween}>
-                <Text style={styles.sectionTitle}>ТЕСТ (Демо режим)</Text>
-                <TouchableOpacity onPress={() => setShowUserList(!showUserList)}>
-                  <Text style={styles.toggleText}>{showUserList ? 'Скрыть' : 'Показать'}</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.sectionSub}>Отслеживание телефона другого пользователя</Text>
-              
-              {showUserList && (
-                <View style={styles.demoBox}>
-                  <CustomInput 
-                    placeholder="Поиск по ID пользователя..."
-                    value={searchQuery}
-                    onChangeText={searchUsers}
-                    leftIcon={<Search color={COLORS.primary} size={20} />}
-                  />
-                  
-                  {searching ? (
-                    <ActivityIndicator color={COLORS.primary} style={{ margin: 10 }} />
-                  ) : (
-                    users.map(u => (
-                      <TouchableOpacity 
-                        key={u.id} 
-                        style={styles.userItem}
-                        onPress={() => sendTrackingRequest(u.id)}
-                      >
-                        <User color={COLORS.textSecondary} size={18} />
-                        <View style={{ flex: 1, marginLeft: 10 }}>
-                            <Text style={styles.userName}>{u.first_name || 'Без имени'}</Text>
-                            <Text style={{ color: COLORS.textSecondary, fontSize: 12 }}>{u.email}</Text>
-                        </View>
-                        <View style={styles.requestBtn}>
-                            <Smartphone color={COLORS.primary} size={16} />
-                            <Text style={styles.requestBtnText}>Запрос</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))
-                  )}
-                </View>
-              )}
-            </View>
-
-            <View style={styles.footer}>
-              <CustomButton 
-                title="Сохранить животное" 
-                onPress={handleSave}
-                loading={loading}
-                style={styles.saveBtn}
-              />
-            </View>
-          </ScrollView>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <View style={styles.content}>
+            {step === 1 && renderStep1()}
+            {step === 2 && renderStep2()}
+            {step === 3 && mode === 'gps' && renderStep3GPS()}
+            {step === 3 && mode === 'demo' && renderStep3Demo()}
+          </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
@@ -298,144 +258,33 @@ const AddAnimalScreen = ({ navigation }: any) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFF',
-  },
-  scrollContent: {
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: 40,
-  },
-  section: {
-    marginTop: 10,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginBottom: 8,
-  },
-  sectionSub: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginBottom: 15,
-  },
-  label: {
-    fontSize: 14,
-    color: '#E5E7EB',
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  typeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: SPACING.lg,
-  },
-  typeItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-  },
-  typeItemActive: {
-    backgroundColor: 'rgba(255, 107, 0, 0.1)',
-    borderColor: COLORS.primary,
-  },
-  typeText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-  },
-  typeTextActive: {
-    color: COLORS.primary,
-    fontWeight: 'bold',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    marginVertical: 20,
-  },
-  footer: {
-    marginTop: 30,
-  },
-  saveBtn: {
-    height: 60,
-  },
-  rowBetween: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  toggleText: {
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-  demoBox: {
-    backgroundColor: COLORS.surface,
-    padding: 15,
-    borderRadius: 20,
-    marginTop: 10,
-  },
-  userItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-  },
-  userName: {
-    color: COLORS.white,
-    marginLeft: 10,
-    flex: 1,
-    fontSize: 14,
-  },
-  requestBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(255,107,0,0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  requestBtnText: {
-    color: COLORS.primary,
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  acceptBtn: {
-    backgroundColor: COLORS.secondary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  acceptBtnText: {
-    color: '#000',
-    fontSize: 12,
-    fontWeight: 'bold',
-  }
+  container: { flex: 1, backgroundColor: COLORS.background },
+  safeArea: { flex: 1 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: SPACING.lg, paddingVertical: SPACING.md },
+  backBtn: { width: 40, height: 40, justifyContent: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#FFF' },
+  content: { flex: 1, paddingHorizontal: SPACING.lg },
+  stepContainer: { flex: 1, paddingTop: 20 },
+  stepTitle: { fontSize: 22, fontWeight: 'bold', color: '#FFF', marginBottom: 20 },
+  label: { fontSize: 14, color: '#E5E7EB', marginBottom: 8, fontWeight: '500' },
+  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 30 },
+  typeItem: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  typeItemActive: { backgroundColor: 'rgba(255, 107, 0, 0.1)', borderColor: COLORS.primary },
+  typeText: { color: COLORS.textSecondary, fontSize: 14 },
+  typeTextActive: { color: COLORS.primary, fontWeight: 'bold' },
+  nextBtn: { height: 60, marginTop: 20 },
+  modeCard: { backgroundColor: COLORS.surface, padding: 20, borderRadius: 20, flexDirection: 'row', alignItems: 'center', marginBottom: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  modeIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.03)', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  modeName: { color: '#FFF', fontSize: 18, fontWeight: 'bold', marginBottom: 2 },
+  modeDesc: { color: COLORS.textSecondary, fontSize: 13 },
+  backLink: { padding: 15, alignSelf: 'center', marginTop: 10 },
+  backLinkText: { color: COLORS.textSecondary, fontSize: 15 },
+  sectionSub: { fontSize: 14, color: COLORS.textSecondary, marginBottom: 20, lineHeight: 20 },
+  userList: { flex: 1, marginTop: 10 },
+  userItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  userName: { color: COLORS.white, fontWeight: '600', fontSize: 15 },
+  requestBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,107,0,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  requestBtnText: { color: COLORS.primary, fontSize: 12, fontWeight: 'bold' }
 });
 
 export default AddAnimalScreen;

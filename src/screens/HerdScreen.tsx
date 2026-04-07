@@ -1,50 +1,158 @@
-import React from 'react';
-import { View, Text, StyleSheet, Dimensions, FlatList, TouchableOpacity, TextInput } from 'react-native';
-import { COLORS, SPACING, TYPOGRAPHY } from '../theme/theme';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Dimensions,
+  FlatList,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  RefreshControl
+} from 'react-native';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS } from '../theme/theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, Filter, ChevronRight } from 'lucide-react-native';
+import { Search, Filter, ChevronRight, Plus, Activity, Zap, Info } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { supabase } from '../../supabase';
+import { useNavigation } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
-const ANIMALS = [
-  { id: '1', name: 'Зорька #01', type: 'Корова', status: 'Здорова', color: COLORS.green, icon: '🐄' },
-  { id: '2', name: 'Буян #04', type: 'Лошадь', status: 'Вне зоны!', color: COLORS.red, icon: '🐎' },
-  { id: '3', name: 'Отара #2', type: 'Овца', status: 'Сонливость', color: COLORS.primary, icon: '🐑' },
-  { id: '4', name: 'Милка #09', type: 'Корова', status: 'Здорова', color: COLORS.green, icon: '🐄' },
-  { id: '5', name: 'Борис #12', type: 'Бык', status: 'Здоров', color: COLORS.green, icon: '🐂' },
-];
+interface Animal {
+  id: string;
+  name: string;
+  type: string;
+  status: 'online' | 'offline' | 'gps_dead' | 'demo';
+  updated_at: string;
+  tracker_id?: string;
+}
 
-const AnimalCard = ({ item, onPress }: any) => (
-  <TouchableOpacity style={styles.card} onPress={onPress}>
-    <View style={styles.contentRow}>
-      <View style={styles.iconCircle}>
-        <Text style={styles.emoji}>{item.icon}</Text>
-      </View>
-      <View style={styles.info}>
-        <Text style={styles.name}>{item.name}</Text>
-        <Text style={styles.type}>{item.type}</Text>
-      </View>
-      <View style={styles.statusCol}>
-        <View style={[styles.statusBadge, { backgroundColor: item.color + '10', borderColor: item.color + '30' }]}>
-          <Text style={[styles.statusText, { color: item.color }]}>{item.status}</Text>
+const AnimalCard = ({ item, onPress }: { item: Animal; onPress: () => void }) => {
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'online': return 'В сети';
+      case 'demo': return 'Демо-режим';
+      case 'gps_dead': return 'GPS не отвечает';
+      default: return 'Офлайн';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'online': return COLORS.green;
+      case 'demo': return COLORS.secondary;
+      case 'gps_dead': return COLORS.red;
+      default: return COLORS.textSecondary;
+    }
+  };
+
+  const lastUpdated = item.updated_at !== '---' 
+    ? new Date(item.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+    : '---';
+
+  return (
+    <TouchableOpacity style={styles.card} onPress={onPress}>
+      <View style={styles.cardHeader}>
+        <View style={styles.nameRow}>
+          <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
+          <Text style={styles.name}>{item.name}</Text>
         </View>
-        <ChevronRight color="rgba(255,255,255,0.1)" size={20} />
+        <Text style={[styles.statusBadgeText, { color: getStatusColor(item.status) }]}>
+          {getStatusText(item.status)}
+        </Text>
       </View>
-    </View>
-  </TouchableOpacity>
-);
 
-const HerdScreen = ({ navigation }: any) => {
+      <View style={styles.cardBody}>
+        <View style={styles.infoItem}>
+          <Activity size={14} color={COLORS.textSecondary} />
+          <Text style={styles.infoText}>{item.type || 'Животное'}</Text>
+        </View>
+        <View style={styles.infoItem}>
+          <Zap size={14} color={COLORS.textSecondary} />
+          <Text style={styles.infoText}>
+            {item.status === 'demo' ? 'Режим: Телефон' : `Трекер: ${item.tracker_id ? 'Подключен' : 'Нет'}`}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.cardFooter}>
+        <Text style={styles.updateText}>Обновлено: {lastUpdated}</Text>
+        <ChevronRight color="rgba(255,255,255,0.2)" size={18} />
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+const HerdScreen = () => {
+  const navigation = useNavigation<any>();
+  const [animals, setAnimals] = useState<Animal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    fetchAnimals();
+  }, []);
+
+  const fetchAnimals = async () => {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('animals')
+      .select('*, locations(updated_at)')
+      .eq('owner_id', user.id);
+
+    if (data) {
+      const now = new Date();
+      const formatted: Animal[] = data.map((a: any) => {
+        const lastLoc = a.locations?.[0]?.updated_at;
+        const isRecent = lastLoc && (now.getTime() - new Date(lastLoc).getTime() < 600000);
+        
+        let status: 'online' | 'offline' | 'gps_dead' | 'demo' = 'offline';
+        const isDemo = a.tracker_id?.length === 36;
+
+        if (isDemo) {
+          status = 'demo';
+        } else if (a.tracker_id) {
+          status = isRecent ? 'online' : 'gps_dead';
+        }
+
+        return {
+          ...a,
+          status,
+          updated_at: lastLoc || '---'
+        };
+      });
+      setAnimals(formatted);
+    }
+    setLoading(false);
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchAnimals();
+    setRefreshing(false);
+  };
+
+  const filteredAnimals = animals.filter(a => 
+    a.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Ваше стадо</Text>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>12 голов</Text>
+          <View>
+            <Text style={styles.title}>Ваше стадо</Text>
+            <Text style={styles.subtitle}>{animals.length} голов всего</Text>
           </View>
+          <TouchableOpacity style={styles.filterBtn}>
+            <Filter color={COLORS.primary} size={20} />
+          </TouchableOpacity>
         </View>
 
         {/* Search Bar */}
@@ -55,26 +163,51 @@ const HerdScreen = ({ navigation }: any) => {
               placeholder="Поиск животного..." 
               placeholderTextColor={COLORS.textSecondary}
               style={styles.searchInput}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
             />
           </View>
-          <TouchableOpacity style={styles.filterBtn}>
-            <Filter color={COLORS.primary} size={20} />
-          </TouchableOpacity>
         </View>
 
         {/* List */}
-        <FlatList
-          data={ANIMALS}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <AnimalCard 
-              item={item} 
-              onPress={() => navigation.navigate('AnimalDetails')} 
-            />
-          )}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
+        {loading && !refreshing ? (
+          <View style={styles.center}>
+            <ActivityIndicator color={COLORS.primary} size="large" />
+          </View>
+        ) : (
+          <FlatList
+            data={filteredAnimals}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <AnimalCard 
+                item={item} 
+                onPress={() => navigation.navigate('AnimalDetails', { animalId: item.id })} 
+              />
+            )}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Info size={48} color={COLORS.surface} strokeWidth={1} />
+                <Text style={styles.emptyTitle}>Нет животных</Text>
+                <Text style={styles.emptySubtitle}>
+                  {searchQuery ? 'Ничего не найдено по вашему запросу' : 'Вы еще не добавили ни одного животного'}
+                </Text>
+                {!searchQuery && (
+                   <TouchableOpacity 
+                    style={styles.addBtn}
+                    onPress={() => navigation.navigate('AddAnimal')}
+                  >
+                    <Text style={styles.addBtnText}>Добавить первое животное</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            }
+          />
+        )}
 
         {/* Floating Add Button */}
         <TouchableOpacity 
@@ -86,7 +219,7 @@ const HerdScreen = ({ navigation }: any) => {
             colors={COLORS.gradient as any}
             style={styles.fabGradient}
           >
-            <Text style={styles.fabIcon}>+</Text>
+            <Plus color="#000" size={30} strokeWidth={2.5} />
           </LinearGradient>
         </TouchableOpacity>
       </SafeAreaView>
@@ -114,27 +247,16 @@ const styles = StyleSheet.create({
     fontWeight: TYPOGRAPHY.weights.bold,
     color: '#FFF',
   },
-  badge: {
-    backgroundColor: 'rgba(255, 107, 0, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 0, 0.2)',
-  },
-  badgeText: {
-    color: COLORS.primary,
-    fontSize: 13,
-    fontWeight: 'bold',
+  subtitle: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginTop: 2,
   },
   searchContainer: {
-    flexDirection: 'row',
     paddingHorizontal: SPACING.lg,
-    gap: 12,
     marginBottom: SPACING.lg,
   },
   searchBar: {
-    flex: 1,
     height: 52,
     backgroundColor: COLORS.surface,
     borderRadius: 16,
@@ -142,7 +264,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 15,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   searchInput: {
     flex: 1,
@@ -151,96 +273,132 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   filterBtn: {
-    width: 52,
-    height: 52,
+    width: 48,
+    height: 48,
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   listContent: {
     paddingHorizontal: SPACING.lg,
-    paddingBottom: 40,
+    paddingBottom: 100,
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 20,
+    borderRadius: RADIUS.card,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.05)',
+    ...SHADOWS.medium,
   },
-  contentRow: {
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  iconCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emoji: {
-    fontSize: 26,
-  },
-  info: {
-    flex: 1,
-    marginLeft: 15,
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 10,
   },
   name: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#FFF',
-    marginBottom: 2,
   },
-  type: {
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cardBody: {
+    flexDirection: 'row',
+    gap: 20,
+    marginBottom: 16,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  infoText: {
     fontSize: 13,
     color: COLORS.textSecondary,
   },
-  statusCol: {
+  cardFooter: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 10,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.05)',
   },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  statusText: {
+  updateText: {
     fontSize: 12,
-    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
   },
   fab: {
     position: 'absolute',
     right: 20,
     bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    elevation: 8,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    ...SHADOWS.medium,
   },
   fabGradient: {
     flex: 1,
-    borderRadius: 28,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  fabIcon: {
-    color: '#000',
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginTop: -2,
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  emptyTitle: {
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 16,
+  },
+  emptySubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 8,
+    paddingHorizontal: 40,
+  },
+  addBtn: {
+    marginTop: 24,
+    backgroundColor: 'rgba(255, 107, 0, 0.1)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: RADIUS.button,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  addBtnText: {
+    color: COLORS.primary,
+    fontWeight: 'bold',
+  }
 });
 
 export default HerdScreen;

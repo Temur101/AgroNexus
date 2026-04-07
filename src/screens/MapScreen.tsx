@@ -12,7 +12,8 @@ import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { supabase } from '../../supabase';
 import { COLORS, SHADOWS, RADIUS, SPACING } from '../theme/theme';
-import { Shield, Navigation2, Map as MapIcon, Check, X, AlertTriangle, UserMinus, Trash2 } from 'lucide-react-native';
+import { Shield, Navigation2, Map as MapIcon, Check, X, AlertTriangle, UserMinus, Trash2, Plus } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
 
 const { width, height } = Dimensions.get('window');
 
@@ -40,6 +41,7 @@ const isPointInPolygon = (point: { lat: number, lng: number }, polygon: any[]) =
 };
 
 export default function MapScreen() {
+  const navigation = useNavigation<any>();
   const mapRef = useRef<MapView>(null);
   const [items, setItems] = useState<TrackerItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -161,12 +163,15 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+          <View style={styles.header}>
         <View>
           <Text style={styles.title}>{isDrawing ? 'Режим зон' : 'Карта'}</Text>
-          <Text style={styles.subtitle}>{isDrawing ? 'Ставьте точки на карте' : `${items.length} объекта в сети`}</Text>
+          <Text style={styles.subtitle}>{isDrawing ? 'Ставьте точки на карте' : `${items.length} объекта(ов) в сети`}</Text>
         </View>
-        <TouchableOpacity style={[styles.iconBtn, isDrawing && { backgroundColor: COLORS.primary }]} onPress={() => { setIsDrawing(!isDrawing); setNewFencePoints([]); setSelectedFence(null); }}>
+        <TouchableOpacity 
+          style={[styles.iconBtn, isDrawing && { backgroundColor: COLORS.primary }]} 
+          onPress={() => { setIsDrawing(!isDrawing); setNewFencePoints([]); setSelectedFence(null); }}
+        >
           {isDrawing ? <X color="#000" size={20} /> : <MapIcon color={COLORS.primary} size={20} />}
         </TouchableOpacity>
       </View>
@@ -179,9 +184,24 @@ export default function MapScreen() {
       )}
 
       <View style={styles.mapWrapper}>
-        <MapView ref={mapRef} provider={PROVIDER_GOOGLE} style={styles.map} mapType="hybrid" onPress={handleMapPress} initialRegion={{ latitude: 41.2995, longitude: 69.2401, latitudeDelta: 0.1, longitudeDelta: 0.1 }}>
+        <MapView 
+          ref={mapRef} 
+          provider={PROVIDER_GOOGLE} 
+          style={styles.map} 
+          mapType="hybrid" 
+          onPress={handleMapPress} 
+          initialRegion={{ latitude: 41.2995, longitude: 69.2401, latitudeDelta: 0.1, longitudeDelta: 0.1 }}
+        >
           {savedFences.map(f => (
-            <Polygon key={f.id} coordinates={f.coordinates} fillColor={selectedFence?.id === f.id ? "rgba(255, 30, 0, 0.3)" : "rgba(255,107,0,0.2)"} strokeColor={selectedFence?.id === f.id ? "#FF3B30" : COLORS.primary} strokeWidth={2} tappable={true} onPress={() => setSelectedFence(f)} />
+            <Polygon 
+              key={f.id} 
+              coordinates={f.coordinates} 
+              fillColor={selectedFence?.id === f.id ? "rgba(255, 30, 0, 0.3)" : "rgba(255,107,0,0.2)"} 
+              strokeColor={selectedFence?.id === f.id ? "#FF3B30" : COLORS.primary} 
+              strokeWidth={2} 
+              tappable={true} 
+              onPress={() => setSelectedFence(f)} 
+            />
           ))}
           {isDrawing && newFencePoints.length > 0 && <Polygon coordinates={newFencePoints} fillColor="rgba(59,130,246,0.3)" strokeColor="#3B82F6" strokeWidth={3} />}
           {isDrawing && newFencePoints.map((p, i) => <Marker key={i} coordinate={p}><View style={styles.drawPoint} /></Marker>)}
@@ -196,8 +216,29 @@ export default function MapScreen() {
           ))}
         </MapView>
         
-        {isDrawing && newFencePoints.length >= 3 && <TouchableOpacity style={styles.saveFenceBtn} onPress={saveGeofence}><Check color="#000" size={24} /><Text style={styles.saveFenceText}>Сохранить зону</Text></TouchableOpacity>}
-        <TouchableOpacity style={styles.myLocationBtn} onPress={() => { if (userLoc) mapRef.current?.animateToRegion({ latitude: userLoc.latitude, longitude: userLoc.longitude, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 1000); }}><Navigation2 color={COLORS.primary} size={24} fill={COLORS.primary} /></TouchableOpacity>
+        {/* Floating Action Buttons */}
+        <View style={styles.fabContainer}>
+          {isDrawing && newFencePoints.length >= 3 && (
+            <TouchableOpacity style={styles.saveFenceBtn} onPress={saveGeofence}>
+              <Check color="#000" size={24} />
+              <Text style={styles.saveFenceText}>Сохранить</Text>
+            </TouchableOpacity>
+          )}
+          
+          <TouchableOpacity 
+            style={styles.fabBtn} 
+            onPress={() => { if (userLoc) mapRef.current?.animateToRegion({ latitude: userLoc.latitude, longitude: userLoc.longitude, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 1000); }}
+          >
+            <Navigation2 color={COLORS.primary} size={24} fill={COLORS.primary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.fabBtn, { backgroundColor: COLORS.primary }]} 
+            onPress={() => (navigation as any).navigate('AddAnimal')}
+          >
+            <Plus color="#000" size={24} strokeWidth={3} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {selectedFence && (
@@ -240,10 +281,11 @@ const styles = StyleSheet.create({
   directionArrow: { position: 'absolute', width: 50, height: 50, justifyContent: 'center', alignItems: 'center', zIndex: 0 },
   arrowPointer: { width: 0, height: 0, backgroundColor: 'transparent', borderStyle: 'solid', borderLeftWidth: 8, borderRightWidth: 8, borderBottomWidth: 15, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: 'rgba(59, 130, 246, 0.8)', transform: [{ translateY: -20 }] },
   markerText: { fontSize: 22 },
-  myLocationBtn: { position: 'absolute', bottom: 24, right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.primary, ...SHADOWS.medium },
+  fabContainer: { position: 'absolute', bottom: 24, right: 24, gap: 16, alignItems: 'flex-end' },
+  fabBtn: { width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.primary, ...SHADOWS.medium },
   drawPoint: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FFF', borderWidth: 2, borderColor: '#3B82F6' },
-  saveFenceBtn: { position: 'absolute', bottom: 24, left: 24, backgroundColor: COLORS.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 30, flexDirection: 'row', alignItems: 'center', gap: 8, ...SHADOWS.medium, zIndex: 100 },
-  saveFenceText: { color: '#000', fontWeight: 'bold' },
+  saveFenceBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 30, flexDirection: 'row', alignItems: 'center', gap: 8, ...SHADOWS.medium },
+  saveFenceText: { color: '#000', fontWeight: 'bold', fontSize: 13 },
   disconnectBtn: { backgroundColor: '#FF3B30', marginHorizontal: 24, marginBottom: 20, padding: 16, borderRadius: RADIUS.card, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, ...SHADOWS.medium },
   disconnectText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
   deleteFenceBtn: { position: 'absolute', top: 120, alignSelf: 'center', backgroundColor: '#FF3B30', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 8, ...SHADOWS.medium, zIndex: 100 },

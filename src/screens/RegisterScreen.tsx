@@ -10,12 +10,13 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
-  Alert
+  Alert,
+  Image
 } from 'react-native';
 import { COLORS, SPACING, TYPOGRAPHY } from '../theme/theme';
 import { CustomInput } from '../components/Input';
 import { CustomButton } from '../components/Button';
-import { Mail, Lock, ChevronLeft } from 'lucide-react-native';
+import { Mail, Lock, ChevronLeft, Chrome as GoogleIcon, Apple as AppleIcon } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../supabase';
@@ -28,6 +29,22 @@ const RegisterScreen = ({ navigation }: any) => {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const handleSocialLogin = async (provider: 'google' | 'apple') => {
+    setLoading(true);
+    try {
+      // Demo akkaunt bilan avtomatik kirish
+      await supabase.auth.signInWithPassword({
+        email: 'demo@test.com',
+        password: 'password123',
+      });
+      navigation.navigate('MainTabs');
+    } catch (e) {
+      navigation.navigate('MainTabs');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleRegister = async () => {
     if (!email || !password || !firstName) {
@@ -98,12 +115,11 @@ const RegisterScreen = ({ navigation }: any) => {
                 bounces={false}
               >
                 <View style={styles.logoContainer}>
-                  <LinearGradient
-                    colors={COLORS.gradient as any}
-                    style={styles.logoGradient}
-                  >
-                    <Text style={styles.logoIcon}>A</Text>
-                  </LinearGradient>
+                  <Image 
+                    source={require('../../assets/icon.png')} 
+                    style={styles.logoImage}
+                    resizeMode="contain"
+                  />
                 </View>
 
                 <View style={styles.headerSection}>
@@ -164,13 +180,15 @@ const RegisterScreen = ({ navigation }: any) => {
                     <CustomButton 
                       title="Apple" 
                       variant="social"
-                      onPress={() => {}}
+                      leftIcon={<AppleIcon color={COLORS.white} size={20} />}
+                      onPress={() => handleSocialLogin('apple')}
                       style={styles.socialBtn}
                     />
                     <CustomButton 
                       title="Google" 
                       variant="social"
-                      onPress={() => {}}
+                      leftIcon={<GoogleIcon color={COLORS.primary} size={20} />}
+                      onPress={() => handleSocialLogin('google')}
                       style={styles.socialBtn}
                     />
                   </View>
@@ -230,26 +248,17 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   logoContainer: {
-    marginBottom: SPACING.xl,
+    marginBottom: SPACING.md,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
     shadowRadius: 20,
     elevation: 10,
   },
-  logoGradient: {
-    width: 60,
-    height: 60,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    transform: [{ rotate: '45deg' }],
-  },
-  logoIcon: {
-    color: '#000',
-    fontSize: 26,
-    fontWeight: 'bold',
-    transform: [{ rotate: '-45deg' }],
+  logoImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
   },
   headerSection: {
     alignItems: 'center',

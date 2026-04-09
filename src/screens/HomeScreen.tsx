@@ -9,6 +9,7 @@ import {
   FlatList,
   Platform,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { User, Activity, Bell, Map, Plus, LogOut } from 'lucide-react-native';
@@ -126,9 +127,16 @@ const HomeScreen = () => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Привет,</Text>
-            <Text style={styles.userName}>{user?.email?.split('@')[0] || 'Фермер'}</Text>
+          <View style={styles.headerLeft}>
+            <Image 
+              source={require('../../assets/icon.png')} 
+              style={styles.headerLogo}
+              resizeMode="contain"
+            />
+            <View>
+              <Text style={styles.greeting}>Привет,</Text>
+              <Text style={styles.userName}>{user?.email?.split('@')[0] || 'Фермер'}</Text>
+            </View>
           </View>
           <View style={styles.headerButtons}>
             <TouchableOpacity 
@@ -139,9 +147,6 @@ const HomeScreen = () => {
             </TouchableOpacity>
             <TouchableOpacity style={styles.profileButton} onPress={handleLogout}>
               <LogOut size={22} color={COLORS.red} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.profileButton}>
-              <User size={24} color={COLORS.white} />
             </TouchableOpacity>
           </View>
         </View>
@@ -218,9 +223,19 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xl,
     marginTop: Platform.OS === 'ios' ? 0 : 40,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerLogo: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+  },
   headerButtons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
   greeting: {
     color: COLORS.textSecondary,

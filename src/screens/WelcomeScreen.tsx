@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Image } from 'react-native';
 import { COLORS, SPACING, TYPOGRAPHY } from '../theme/theme';
 import { CustomButton } from '../components/Button';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,14 +21,11 @@ const WelcomeScreen = ({ navigation }: any) => {
       <SafeAreaView style={styles.content}>
         {/* Logo Section */}
         <View style={styles.logoSection}>
-          <View style={styles.logoContainer}>
-            <LinearGradient
-              colors={COLORS.gradient as any}
-              style={styles.logoGradient}
-            >
-              <Text style={styles.logoSymbol}>A</Text>
-            </LinearGradient>
-          </View>
+          <Image 
+            source={require('../../assets/icon.png')} 
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
 
         {/* Text Section */}
@@ -90,27 +87,12 @@ const styles = StyleSheet.create({
   logoSection: {
     paddingTop: height * 0.1,
     alignItems: 'center',
+    marginBottom: SPACING.md,
   },
-  logoContainer: {
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 30,
-    elevation: 20,
-  },
-  logoGradient: {
-    width: 100,
-    height: 100,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    transform: [{ rotate: '45deg' }],
-  },
-  logoSymbol: {
-    color: '#000',
-    fontSize: 48,
-    fontWeight: 'bold',
-    transform: [{ rotate: '-45deg' }],
+  logoImage: {
+    width: 140,
+    height: 140,
+    borderRadius: 35,
   },
   textSection: {
     marginTop: -SPACING.xl,

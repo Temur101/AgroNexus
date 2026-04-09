@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, Bell, Check, X, User } from 'lucide-react-native';
 import { COLORS, SPACING, RADIUS, TYPOGRAPHY } from '../theme/theme';
 import { supabase } from '../../supabase';
+import * as Location from 'expo-location';
 
 const NotificationsScreen = ({ navigation }: any) => {
   const [requests, setRequests] = useState<any[]>([]);
@@ -47,6 +48,17 @@ const NotificationsScreen = ({ navigation }: any) => {
   const handleAccept = async (request: any) => {
     setLoading(true);
     try {
+      // 0. Получаем текущую локацию сразу
+      let currentLoc = null;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          currentLoc = await Location.getCurrentPositionAsync({});
+        }
+      } catch (locErr) {
+        console.log('Location fetch error during accept:', locErr);
+      }
+
       // 1. Создаем животное для отправителя
       const { error: animalError } = await supabase.from('animals').insert({
         name: request.animal_name,
@@ -65,7 +77,18 @@ const NotificationsScreen = ({ navigation }: any) => {
 
       if (permError) throw permError;
 
-      // 3. Обновляем статус запроса
+      // 3. Создаем начальную точку на карте
+      if (currentLoc) {
+        await supabase.from('locations').upsert({
+          user_id: request.to_user_id,
+          lat: currentLoc.coords.latitude,
+          lng: currentLoc.coords.longitude,
+          speed: currentLoc.coords.speed || 0,
+          heading: currentLoc.coords.heading || 0
+        });
+      }
+
+      // 4. Обновляем статус запроса
       const { error: reqError } = await supabase.from('tracking_requests')
         .update({ status: 'accepted' })
         .eq('id', request.id);
@@ -75,6 +98,7 @@ const NotificationsScreen = ({ navigation }: any) => {
       Alert.alert('Успех', 'Запрос принят. Теперь вы отслеживаетесь как это животное.');
       fetchRequests();
     } catch (e: any) {
+      console.error(e);
       Alert.alert('Ошибка', e.message);
     } finally {
       setLoading(false);

@@ -13,6 +13,7 @@ import {
 import { supabase } from '../../supabase';
 import { COLORS, SHADOWS, RADIUS } from '../theme/theme';
 import { User, Check, X, Smartphone } from 'lucide-react-native';
+import * as Location from 'expo-location';
 
 const { width } = Dimensions.get('window');
 
@@ -76,26 +77,60 @@ export default function TrackingNotification() {
     try {
       if (status === 'accepted') {
         const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Пользователь не авторизован');
+
+        // 0. Получаем текущую локацию сразу
+        let currentLoc = null;
+        try {
+          const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
+          if (locStatus === 'granted') {
+            currentLoc = await Location.getCurrentPositionAsync({});
+          }
+        } catch (locErr) {
+          console.log('Location fetch error during accept modal:', locErr);
+        }
         
-        // 1. Создаем разрешение
+        // 1. Создаем животное для отправителя
+        const { error: animalError } = await supabase.from('animals').insert({
+          name: request.animal_name,
+          type: request.animal_type,
+          tracker_id: user.id, // Текущий юзер = трекер
+          owner_id: request.from_user_id // Отправитель = владелец
+        });
+
+        if (animalError) throw animalError;
+
+        // 2. Создаем разрешение
         await supabase.from('tracking_permissions').insert({
-          owner_id: user?.id,
+          owner_id: user.id,
           viewer_id: request.from_user_id
         });
+
+        // 3. Пушим начальную локацию
+        if (currentLoc) {
+            await supabase.from('locations').upsert({
+              user_id: user.id,
+              lat: currentLoc.coords.latitude,
+              lng: currentLoc.coords.longitude,
+              speed: currentLoc.coords.speed || 0,
+              heading: currentLoc.coords.heading || 0
+            });
+        }
       }
 
-      // 2. Обновляем статус запроса
+      // 4. Обновляем статус запроса
       await supabase.from('tracking_requests')
         .update({ status })
         .eq('id', request.id);
 
       Alert.alert(
         status === 'accepted' ? 'Принято!' : 'Отклонено',
-        status === 'accepted' ? 'Пользователь теперь видит вашу геопозицию.' : 'Запрос был удален.'
+        status === 'accepted' ? 'Животное создано. Теперь вы отслеживаетесь.' : 'Запрос был удален.'
       );
       setVisible(false);
       setRequest(null);
     } catch (e: any) {
+      console.error(e);
       Alert.alert('Ошибка', e.message);
     } finally {
       setLoading(false);

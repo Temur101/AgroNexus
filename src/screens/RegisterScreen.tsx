@@ -51,9 +51,8 @@ const RegisterScreen = ({ navigation }: any) => {
       if (error) throw error;
 
       if (data.user) {
-        // Так как подтверждение почты отключено, пользователь может сразу входить
-        // Supabase автоматически авторизует его после signUp
-        navigation.navigate('MainTabs');
+        // Успешный вход — AppNavigator автоматически переключит экраны
+        // так как состояние сессии обновится через onAuthStateChange
       }
     } catch (error: any) {
       Alert.alert('Ошибка регистрации', error.message);

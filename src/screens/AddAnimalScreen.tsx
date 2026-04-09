@@ -16,6 +16,7 @@ import { ChevronLeft, Clipboard, User, Search, Smartphone } from 'lucide-react-n
 import { CustomInput } from '../components/Input';
 import { CustomButton } from '../components/Button';
 import { supabase } from '../../supabase';
+import * as Location from 'expo-location';
 
 const AddAnimalScreen = ({ navigation }: any) => {
   const [step, setStep] = useState(1);
@@ -57,16 +58,35 @@ const AddAnimalScreen = ({ navigation }: any) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
-      const { error } = await supabase.from('animals').insert({
+      // 1. Создаем животное
+      const { data: animalData, error } = await supabase.from('animals').insert({
         name,
         type: animalType,
         tracker_id: trackerId,
         owner_id: user?.id
-      });
+      }).select().single();
 
       if (error) throw error;
 
-      Alert.alert('Успех', 'Животное успешно добавлено', [
+      // 2. Создаем начальную локацию, чтобы животное сразу появилось на карте
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({});
+          await supabase.from('locations').upsert({
+            animal_id: animalData.id,
+            tracker_id: trackerId,
+            lat: loc.coords.latitude,
+            lng: loc.coords.longitude,
+            speed: loc.coords.speed || 0,
+            heading: loc.coords.heading || 0
+          });
+        }
+      } catch (locErr) {
+        console.log('Initial location error:', locErr);
+      }
+
+      Alert.alert('Успех', 'Животное успешно добавлено и готово к отслеживанию', [
         { text: 'OK', onPress: () => navigation.navigate('MainTabs', { screen: 'Herd' }) }
       ]);
     } catch (error: any) {

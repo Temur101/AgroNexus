@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,11 @@ import {
 } from 'react-native';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SHADOWS } from '../theme/theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, Filter, ChevronRight, Plus, Activity, Zap, Info } from 'lucide-react-native';
+import { Search, Filter, ChevronRight, Plus, Activity, Zap, Info, Trash2 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../supabase';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { Alert } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -28,7 +29,7 @@ interface Animal {
   tracker_id?: string;
 }
 
-const AnimalCard = ({ item, onPress }: { item: Animal; onPress: () => void }) => {
+const AnimalCard = ({ item, onPress, onDelete }: { item: Animal; onPress: () => void, onDelete: () => void }) => {
   const getStatusText = (status: string) => {
     switch (status) {
       case 'online': return 'В сети';
@@ -52,35 +53,38 @@ const AnimalCard = ({ item, onPress }: { item: Animal; onPress: () => void }) =>
     : '---';
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress}>
-      <View style={styles.cardHeader}>
-        <View style={styles.nameRow}>
-          <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
-          <Text style={styles.name}>{item.name}</Text>
+    <View style={styles.cardContainer}>
+      <TouchableOpacity style={styles.card} onPress={onPress}>
+        <View style={styles.cardHeader}>
+          <View style={styles.nameRow}>
+            <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
+            <Text style={styles.name}>{item.name}</Text>
+          </View>
+          {item.status !== 'offline' && (
+            <Text style={[styles.statusBadgeText, { color: getStatusColor(item.status) }]}>
+              {getStatusText(item.status)}
+            </Text>
+          )}
         </View>
-        <Text style={[styles.statusBadgeText, { color: getStatusColor(item.status) }]}>
-          {getStatusText(item.status)}
-        </Text>
-      </View>
 
-      <View style={styles.cardBody}>
-        <View style={styles.infoItem}>
-          <Activity size={14} color={COLORS.textSecondary} />
-          <Text style={styles.infoText}>{item.type || 'Животное'}</Text>
+        <View style={styles.cardBody}>
+          <View style={styles.infoItem}>
+            <Activity size={14} color={COLORS.textSecondary} />
+            <Text style={styles.infoText}>{item.type || 'Животное'}</Text>
+          </View>
+          <View style={styles.infoItem}>
+            <Zap size={14} color={COLORS.textSecondary} />
+            <Text style={styles.infoText}>
+              {item.status === 'demo' ? 'Режим: Телефон' : `Трекер: ${item.tracker_id ? 'Подключен' : 'Нет'}`}
+            </Text>
+          </View>
         </View>
-        <View style={styles.infoItem}>
-          <Zap size={14} color={COLORS.textSecondary} />
-          <Text style={styles.infoText}>
-            {item.status === 'demo' ? 'Режим: Телефон' : `Трекер: ${item.tracker_id ? 'Подключен' : 'Нет'}`}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.cardFooter}>
-        <Text style={styles.updateText}>Обновлено: {lastUpdated}</Text>
-        <ChevronRight color="rgba(255,255,255,0.2)" size={18} />
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+      
+      <TouchableOpacity style={styles.deleteBtn} onPress={onDelete}>
+        <Trash2 size={20} color={COLORS.red} />
+      </TouchableOpacity>
+    </View>
   );
 };
 
@@ -91,50 +95,110 @@ const HerdScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    fetchAnimals();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchAnimals();
+    }, [])
+  );
 
   const fetchAnimals = async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    const { data, error } = await supabase
-      .from('animals')
-      .select('*, locations(updated_at)')
-      .eq('owner_id', user.id);
+      const { data: animalsData, error } = await supabase
+        .from('animals')
+        .select('*')
+        .eq('owner_id', user.id);
 
-    if (data) {
-      const now = new Date();
-      const formatted: Animal[] = data.map((a: any) => {
-        const lastLoc = a.locations?.[0]?.updated_at;
-        const isRecent = lastLoc && (now.getTime() - new Date(lastLoc).getTime() < 600000);
+      if (error) throw error;
+
+      if (animalsData) {
+        // Get all possible location sources
+        const animalIds = animalsData.map(a => a.id);
+        const trackerIds = animalsData.filter(a => a.tracker_id).map(a => a.tracker_id);
+
+        let locQuery = supabase.from('locations').select('animal_id, user_id, updated_at');
+        let conditions = [];
+        if (animalIds.length > 0) conditions.push(`animal_id.in.(${animalIds.join(',')})`);
+        if (trackerIds.length > 0) conditions.push(`user_id.in.(${trackerIds.join(',')})`);
         
-        let status: 'online' | 'offline' | 'gps_dead' | 'demo' = 'offline';
-        const isDemo = a.tracker_id?.length === 36;
+        const { data: locs } = conditions.length > 0 
+          ? await locQuery.or(conditions.join(','))
+          : { data: [] };
 
-        if (isDemo) {
-          status = 'demo';
-        } else if (a.tracker_id) {
-          status = isRecent ? 'online' : 'gps_dead';
-        }
+        const now = new Date();
+        const formatted: Animal[] = animalsData.map((a: any) => {
+          // Find location for this animal
+          const loc = locs?.find(l => 
+            (l.animal_id === a.id) || 
+            (l.tracker_id === a.tracker_id) || 
+            (l.user_id === a.tracker_id)
+          );
+          
+          const lastLoc = loc?.updated_at;
+          const isRecent = lastLoc && (now.getTime() - new Date(lastLoc).getTime() < 300000); // 5 minutes
+          
+          let status: 'online' | 'offline' | 'gps_dead' | 'demo' = 'offline';
+          const isDemo = a.tracker_id && a.tracker_id.length === 36; // UUID check
 
-        return {
-          ...a,
-          status,
-          updated_at: lastLoc || '---'
-        };
-      });
-      setAnimals(formatted);
+          if (isDemo) {
+            status = isRecent ? 'demo' : 'offline';
+          } else if (a.tracker_id) {
+            status = isRecent ? 'online' : 'gps_dead';
+          }
+
+          return {
+            ...a,
+            status,
+            updated_at: lastLoc || '---'
+          };
+        });
+        setAnimals(formatted);
+      }
+    } catch (e) {
+      console.log('Error fetching animals:', e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchAnimals();
     setRefreshing(false);
+  };
+
+  const handleDelete = async (animalId: string, name: string) => {
+    Alert.alert(
+      'Удалить животное',
+      `Вы уверены, что хотите удалить ${name}? Все данные отслеживания будут потеряны.`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        { 
+          text: 'Удалить', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('animals')
+                .delete()
+                .eq('id', animalId);
+
+              if (error) throw error;
+              
+              // Refresh list
+              fetchAnimals();
+              Alert.alert('Успешно', 'Животное удалено');
+            } catch (e) {
+              console.error('Delete error:', e);
+              Alert.alert('Ошибка', 'Не удалось удалить животное');
+            }
+          } 
+        }
+      ]
+    );
   };
 
   const filteredAnimals = animals.filter(a => 
@@ -182,6 +246,7 @@ const HerdScreen = () => {
               <AnimalCard 
                 item={item} 
                 onPress={() => navigation.navigate('AnimalDetails', { animalId: item.id })} 
+                onDelete={() => handleDelete(item.id, item.name)}
               />
             )}
             contentContainerStyle={styles.listContent}
@@ -286,14 +351,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingBottom: 100,
   },
+  cardContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 12,
+  },
   card: {
+    flex: 1,
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.card,
     padding: 16,
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',
     ...SHADOWS.medium,
+  },
+  deleteBtn: {
+    width: 48,
+    height: '100%',
+    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    borderRadius: RADIUS.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.2)',
   },
   cardHeader: {
     flexDirection: 'row',

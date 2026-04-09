@@ -5,12 +5,12 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   FlatList,
   Platform,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { User, Activity, Bell, Map, Plus, LogOut } from 'lucide-react-native';
 import { COLORS, SPACING, RADIUS, TYPOGRAPHY, SHADOWS } from '../theme/theme';
 import { supabase } from '../../supabase';
@@ -155,7 +155,6 @@ const HomeScreen = () => {
             </View>
             <View>
               <Text style={styles.trackingCount}>{activeTracking.count} сейчас активно</Text>
-              <Text style={styles.trackingUpdate}>Обновлено: {activeTracking.lastUpdate}</Text>
             </View>
           </View>
         </View>
@@ -175,9 +174,11 @@ const HomeScreen = () => {
                   <View style={[styles.statusDot, { backgroundColor: getStatusColor(animal.status) }]} />
                   <Text style={styles.animalName}>{animal.name}</Text>
                 </View>
-                <Text style={[styles.animalStatusText, { color: getStatusColor(animal.status) }]}>
-                  {getStatusText(animal.status)}
-                </Text>
+                {animal.status !== 'offline' && (
+                  <Text style={[styles.animalStatusText, { color: getStatusColor(animal.status) }]}>
+                    {getStatusText(animal.status)}
+                  </Text>
+                )}
               </View>
             ))
           ) : (

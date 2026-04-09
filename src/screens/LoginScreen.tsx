@@ -43,8 +43,8 @@ const LoginScreen = ({ navigation }: any) => {
       if (error) throw error;
 
       if (data.user) {
-        // Успешный вход — переходим в основное приложение
-        navigation.navigate('MainTabs');
+        // Успешный вход — AppNavigator автоматически переключит экраны
+        // так как состояние сессии обновится через onAuthStateChange
       }
     } catch (error: any) {
       Alert.alert('Ошибка входа', error.message);

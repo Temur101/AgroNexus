@@ -87,7 +87,7 @@ const AddAnimalScreen = ({ navigation }: any) => {
       }
 
       Alert.alert('Успех', 'Животное успешно добавлено и готово к отслеживанию', [
-        { text: 'OK', onPress: () => navigation.navigate('MainTabs', { screen: 'Herd' }) }
+        { text: 'OK', onPress: () => navigation.navigate('MainTabs', { screen: 'Map' }) }
       ]);
     } catch (error: any) {
       Alert.alert('Ошибка сохранения', error.message);

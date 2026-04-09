@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { DarkTheme } from '@react-navigation/native';
 import TrackingNotification from './src/components/TrackingNotification';
 import GPSTracker from './src/components/GPSTracker';
+import GeofenceMonitor from './src/components/GeofenceMonitor';
 import { registerForPushNotificationsAsync } from './src/utils/notifications';
 import { supabase } from './supabase';
 
@@ -34,6 +35,7 @@ export default function App() {
         <AppNavigator />
         {/* Глобальные сервисы */}
         <GPSTracker />
+        <GeofenceMonitor />
         <TrackingNotification />
       </NavigationContainer>
     </SafeAreaProvider>

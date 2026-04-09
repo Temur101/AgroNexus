@@ -61,11 +61,15 @@ export default function GPSTracker({ animalId }: { animalId?: string }) {
 
           try {
             const conflictColumn = animalId ? 'animal_id' : 'user_id';
-            await supabase
+            const { error: upsertError } = await supabase
               .from('locations')
               .upsert(payload, { onConflict: conflictColumn });
-          } catch (e) {
-            console.log('GPS Logging error:', e);
+            
+            if (upsertError) {
+              console.error('GPS Upsert Error:', upsertError.message, upsertError.details);
+            }
+          } catch (e: any) {
+            console.error('GPS Network/Exception:', e.message || e);
           }
         }
       );

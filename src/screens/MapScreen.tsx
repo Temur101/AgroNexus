@@ -14,6 +14,7 @@ import { supabase } from '../../supabase';
 import { COLORS, SHADOWS, RADIUS, SPACING } from '../theme/theme';
 import { Shield, Navigation2, Map as MapIcon, Check, X, AlertTriangle, UserMinus, Trash2, Plus } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
+import { isPointInPolygon } from '../utils/geo';
 
 const { width, height } = Dimensions.get('window');
 
@@ -27,17 +28,6 @@ interface TrackerItem {
   isAnimal: boolean;
   updated_at: string;
 }
-const isPointInPolygon = (point: { lat: number, lng: number }, polygon: any[]) => {
-  let x = point.lat, y = point.lng;
-  let inside = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    let xi = polygon[i].latitude, yi = polygon[i].longitude;
-    let xj = polygon[j].latitude, yj = polygon[j].longitude;
-    let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-};
 
 const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
   const R = 6371000; // Radius of the Earth in meters
@@ -65,8 +55,6 @@ export default function MapScreen() {
   const [isFenceSelected, setIsFenceSelected] = useState(false);
   const [alertItems, setAlertItems] = useState<string[]>([]);
   const locationWatcher = useRef<any>(null);
-
-  const locationHistory = useRef<any[]>([]);
   const lastConfirmedLoc = useRef<any>(null);
 
   useEffect(() => {
@@ -74,7 +62,7 @@ export default function MapScreen() {
     fetchFences();
     fetchData(); // Fetch initial data
 
-    const interval = setInterval(fetchData, 10000);
+    const interval = setInterval(fetchData, 30000);
 
     const channelId = `locations-${Math.random().toString(36).substring(7)}`;
     const channel = supabase
@@ -87,19 +75,21 @@ export default function MapScreen() {
           const newLoc = payload.new as any;
           if (newLoc) {
             setItems(prev => prev.map(item => {
-              // Проверяем совпадение по animal_id или tracker_id/user_id
-              const isMatch = (newLoc.animal_id && item.id === newLoc.animal_id) || 
-                            (newLoc.tracker_id && item.id === newLoc.tracker_id) ||
-                            (newLoc.user_id && item.id === newLoc.user_id);
+              const isMatch = 
+                (newLoc.animal_id && item.id === newLoc.animal_id) || 
+                (newLoc.user_id && item.id === newLoc.user_id);
               
               if (isMatch) {
-                return { ...item, lat: newLoc.lat, lng: newLoc.lng, updated_at: newLoc.updated_at };
+                return { 
+                  ...item, 
+                  lat: newLoc.lat, 
+                  lng: newLoc.lng, 
+                  updated_at: newLoc.updated_at 
+                };
               }
               return item;
             }));
           }
-          // Периодическая полная синхронизация для обновления имен/типов
-          fetchData(); 
         }
       )
       .subscribe((status) => {
@@ -137,45 +127,24 @@ export default function MapScreen() {
       
       setLoading(false);
 
-      // Запускаем точное слежение с фильтрацией и сглаживанием
+      // Запускаем точное слежение
       locationWatcher.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 2000, distanceInterval: 1 },
+        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 5000, distanceInterval: 3 },
         (loc) => {
           const { latitude, longitude, accuracy, heading } = loc.coords;
 
-          // 1. Фильтр точности (Accuracy Filter): Игнорируем если ошибка > 25 метров
-          if (accuracy && accuracy > 25) {
+          // Фильтр точности (Accuracy Filter): Игнорируем если ошибка > 50 метров
+          if (accuracy && accuracy > 50) {
             console.log('Location ignored: low accuracy', accuracy);
             return;
           }
 
-          // 2. Сглаживание (Smoothing): Усреднение последних 5 позиций
-          locationHistory.current = [...locationHistory.current, { latitude, longitude }].slice(-5);
-          
-          const avgLat = locationHistory.current.reduce((sum, p) => sum + p.latitude, 0) / locationHistory.current.length;
-          const avgLng = locationHistory.current.reduce((sum, p) => sum + p.longitude, 0) / locationHistory.current.length;
-
-          // 3. Фильтр дистанции (Distance Filter): Обновляем только если сдвинулись > 10 метров
-          if (lastConfirmedLoc.current) {
-            const dist = getDistance(
-              lastConfirmedLoc.current.latitude, 
-              lastConfirmedLoc.current.longitude, 
-              avgLat, 
-              avgLng
-            );
-            
-            if (dist < 10) return; // Игнорируем микро-дрейф
-          }
-
-          const smoothedCoords = {
-            latitude: avgLat,
-            longitude: avgLng,
-            accuracy,
-            heading
-          };
-
-          setUserLoc(smoothedCoords);
-          lastConfirmedLoc.current = smoothedCoords;
+          setUserLoc({
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            heading: loc.coords.heading ?? 0,
+            accuracy: loc.coords.accuracy
+          });
         }
       );
     } catch (e) {
@@ -185,13 +154,25 @@ export default function MapScreen() {
   };
 
   const fetchFences = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { data } = await supabase.from('geofences').select('*').eq('owner_id', user.id);
-    if (data && data.length > 0) {
-      setSavedGeofence(data[0].coordinates); 
-    } else {
-      setSavedGeofence([]);
+    try {
+      const { data, error } = await supabase
+        .from('geofences')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1);
+        
+      if (error) {
+        console.error('FetchFences error:', error.message);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        setSavedGeofence(data[0].coordinates); 
+      } else {
+        setSavedGeofence([]);
+      }
+    } catch (e) {
+      console.error('FetchFences exception:', e);
     }
   };
 
@@ -210,26 +191,39 @@ export default function MapScreen() {
       let queryParts = [];
       if (animalIds.length > 0) queryParts.push(`animal_id.in.("${animalIds.join('","')}")`);
       if (userIds.length > 0) queryParts.push(`user_id.in.("${userIds.join('","')}")`);
-      const { data: locs } = await supabase.from('locations').select('*').or(queryParts.join(',')).order('updated_at', { ascending: false });
+      
+      console.log('Fetching locations with query:', queryParts.join(','));
+      
+      if (queryParts.length === 0) {
+        setItems([]);
+        return;
+      }
+
+      const { data: locs, error } = await supabase
+        .from('locations')
+        .select('*')
+        .or(queryParts.join(','))
+        .order('updated_at', { ascending: false });
+        
+      if (error) {
+        console.error('FetchData query error:', error.message);
+        return;
+      }
       
       const currentItemsMap = new Map<string, TrackerItem>();
       const newAlerts: string[] = [];
 
-      locs?.forEach(l => {
-        let animal = null;
-        if (l.animal_id) {
-          animal = animals?.find(a => a.id === l.animal_id);
-        }
-        
-        if (!animal) {
-          animal = animals?.find(a => a.tracker_id === l.tracker_id || a.tracker_id === l.user_id);
-        }
+      for (const l of locs || []) {
+        let animal = animals?.find(a => 
+          a.id === l.animal_id || 
+          a.tracker_id === l.tracker_id || 
+          a.tracker_id === l.user_id
+        );
 
         const isAnml = !!animal;
         const id = isAnml ? (animal?.id || '') : l.user_id;
         
-        // Skip if we already have a newer location for this ID
-        if (currentItemsMap.has(id)) return;
+        if (currentItemsMap.has(id)) continue;
 
         const itemName = animal ? animal.name : (l.user_id === user.id ? 'Я (Вы)' : 'Друг');
         
@@ -252,7 +246,7 @@ export default function MapScreen() {
                 newAlerts.push(trackerItem.name);
             }
         }
-      });
+      }
       setItems(Array.from(currentItemsMap.values()));
       setAlertItems(newAlerts);
     } catch (e) { console.log(e); }
@@ -419,7 +413,7 @@ export default function MapScreen() {
             ))}
 
             {/* STEP 5 - Geofence Polygon */}
-            {savedGeofence.length > 3 && (
+            {savedGeofence.length >= 3 && (
               <Polygon
                 coordinates={savedGeofence.map(p => ({
                   latitude: p.latitude || p.lat,
@@ -498,12 +492,14 @@ export default function MapScreen() {
                   <TouchableOpacity onPress={() => setSelectedItem(null)}><X color="#000" size={20} /></TouchableOpacity>
               </View>
               <Text style={styles.itemDetailSubtitle}>{selectedItem.type}</Text>
-              <TouchableOpacity style={styles.disconnectBtnSmall} onPress={async () => {
-                  Alert.alert('Отключение', `Разорвать связь?`, [{ text: 'Отмена' }, { text: 'Да', style: 'destructive', onPress: async () => {
-                      await supabase.from('tracking_permissions').delete().or(`owner_id.eq.${selectedItem.id},viewer_id.eq.${selectedItem.id}`);
-                      setSelectedItem(null); fetchData();
-                  }}]);
-              }}><UserMinus color="#FFF" size={16} /><Text style={styles.disconnectTextSmall}>Удалить доступ</Text></TouchableOpacity>
+              {!selectedItem.isAnimal && (
+                <TouchableOpacity style={styles.disconnectBtnSmall} onPress={async () => {
+                    Alert.alert('Отключение', `Разорвать связь?`, [{ text: 'Отмена' }, { text: 'Да', style: 'destructive', onPress: async () => {
+                        await supabase.from('tracking_permissions').delete().or(`owner_id.eq.${selectedItem.id},viewer_id.eq.${selectedItem.id}`);
+                        setSelectedItem(null); fetchData();
+                    }}]);
+                }}><UserMinus color="#FFF" size={16} /><Text style={styles.disconnectTextSmall}>Удалить доступ</Text></TouchableOpacity>
+              )}
 
               {selectedItem.isAnimal && (
                 <TouchableOpacity 

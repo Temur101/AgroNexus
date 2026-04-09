@@ -10,13 +10,12 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
-  Alert,
-  Image
+  Alert
 } from 'react-native';
 import { COLORS, SPACING, TYPOGRAPHY } from '../theme/theme';
 import { CustomInput } from '../components/Input';
 import { CustomButton } from '../components/Button';
-import { Mail, Lock, ChevronLeft, Chrome as GoogleIcon, Apple as AppleIcon } from 'lucide-react-native';
+import { Mail, Lock, ChevronLeft } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../supabase';
@@ -27,26 +26,6 @@ const LoginScreen = ({ navigation }: any) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-
-  const handleSocialLogin = async (provider: 'google' | 'apple') => {
-    setLoading(true);
-    try {
-      // Demo akkaunt bilan avtomatik kirish
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: 'demo@test.com', // Supabase'da shu emailni ochib qo'ying
-        password: 'password123',
-      });
-
-      if (error) {
-        // Xatolik bo'lsa ham (masalan akkaunt topilmasa), baribir o'tkazib yuboramiz
-        navigation.navigate('MainTabs');
-      }
-    } catch (e) {
-      navigation.navigate('MainTabs');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -109,11 +88,12 @@ const LoginScreen = ({ navigation }: any) => {
               keyboardDismissMode="on-drag"
             >
               <View style={styles.logoContainer}>
-                <Image 
-                  source={require('../../assets/icon.png')} 
-                  style={styles.logoImage}
-                  resizeMode="contain"
-                />
+                <LinearGradient
+                  colors={COLORS.gradient as any}
+                  style={styles.logoGradient}
+                >
+                  <Text style={styles.logoIcon}>A</Text>
+                </LinearGradient>
               </View>
 
               <View style={styles.headerSection}>
@@ -158,15 +138,13 @@ const LoginScreen = ({ navigation }: any) => {
                   <CustomButton 
                     title="Apple" 
                     variant="social"
-                    leftIcon={<AppleIcon color={COLORS.white} size={20} />}
-                    onPress={() => handleSocialLogin('apple')}
+                    onPress={() => {}}
                     style={styles.socialBtn}
                   />
                   <CustomButton 
                     title="Google" 
                     variant="social"
-                    leftIcon={<GoogleIcon color={COLORS.primary} size={20} />}
-                    onPress={() => handleSocialLogin('google')}
+                    onPress={() => {}}
                     style={styles.socialBtn}
                   />
                 </View>
@@ -224,17 +202,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoContainer: {
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.xl,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
     shadowRadius: 20,
     elevation: 10,
   },
-  logoImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 25,
+  logoGradient: {
+    width: 70,
+    height: 70,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    transform: [{ rotate: '45deg' }],
+  },
+  logoIcon: {
+    color: '#000',
+    fontSize: 32,
+    fontWeight: 'bold',
+    transform: [{ rotate: '-45deg' }],
   },
   headerSection: {
     alignItems: 'center',

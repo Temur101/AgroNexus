@@ -155,9 +155,13 @@ export default function MapScreen() {
 
   const fetchFences = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data, error } = await supabase
         .from('geofences')
         .select('*')
+        .eq('owner_id', user.id)
         .order('created_at', { ascending: false })
         .limit(1);
         
@@ -280,7 +284,10 @@ export default function MapScreen() {
           text: 'Удалить',
           style: 'destructive',
           onPress: async () => {
-            await supabase.from('geofences').delete().neq('id', '');
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              await supabase.from('geofences').delete().eq('owner_id', user.id);
+            }
             setSavedGeofence([]);
             setGeofencePoints([]);
             setIsFenceSelected(false);

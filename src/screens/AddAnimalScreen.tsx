@@ -57,6 +57,19 @@ const AddAnimalScreen = ({ navigation }: any) => {
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
+
+      // ПРОВЕРКА: Не занят ли этот трекер другим животным
+      const { data: existing } = await supabase
+        .from('animals')
+        .select('name')
+        .eq('tracker_id', trackerId.trim())
+        .maybeSingle();
+
+      if (existing) {
+        Alert.alert('Ошибка', `Этот ID трекера уже используется животным "${existing.name}". Чтобы перепривязать его, сначала удалите старое животное из раздела "Стадо".`);
+        setLoading(false);
+        return;
+      }
       
       // 1. Создаем животное
       const { data: animalData, error } = await supabase.from('animals').insert({
@@ -75,12 +88,13 @@ const AddAnimalScreen = ({ navigation }: any) => {
           const loc = await Location.getCurrentPositionAsync({});
           await supabase.from('locations').upsert({
             animal_id: animalData.id,
-            tracker_id: trackerId,
+            user_id: user?.id,
             lat: loc.coords.latitude,
             lng: loc.coords.longitude,
             speed: loc.coords.speed || 0,
-            heading: loc.coords.heading || 0
-          });
+            heading: loc.coords.heading || 0,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'animal_id' });
         }
       } catch (locErr) {
         console.log('Initial location error:', locErr);

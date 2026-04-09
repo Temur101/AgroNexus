@@ -65,14 +65,6 @@ const MainTabs = () => {
           tabBarIcon: ({ color, size }) => <Layers size={size} color={color} />,
         }}
       />
-      <Tab.Screen 
-        name="AI" 
-        component={AIVetScreen} 
-        options={{
-          tabBarLabel: 'AI Ветеринар',
-          tabBarIcon: ({ color, size }) => <Cpu size={size} color={color} />,
-        }}
-      />
     </Tab.Navigator>
   );
 };

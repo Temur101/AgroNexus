@@ -3,7 +3,7 @@ import * as Location from 'expo-location';
 import { supabase } from '../../supabase';
 
 const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-  const R = 6371000; // Радиус Земли в метрах
+  const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -23,72 +23,93 @@ export default function GPSTracker({ animalId }: { animalId?: string }) {
       if (status !== 'granted') return;
 
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user && !animalId) return;
+      if (!user) return;
       
       if (positionSub) positionSub.remove();
+
+      // Resolve animal ID for background/phone tracking
+      let resolvedAnimalId = animalId ?? null;
+      if (!resolvedAnimalId) {
+        try {
+          const { data: linked } = await supabase
+            .from('animals')
+            .select('id')
+            .eq('tracker_id', user.id)
+            .maybeSingle();
+          if (linked) {
+            resolvedAnimalId = linked.id;
+          }
+        } catch (_) {}
+      }
 
       positionSub = await Location.watchPositionAsync(
         { 
           accuracy: Location.Accuracy.BestForNavigation, 
-          timeInterval: 3000, 
+          timeInterval: 5000, 
           distanceInterval: 1 
         },
         async (loc) => {
           const lat = loc.coords.latitude;
           const lng = loc.coords.longitude;
 
-          // ФИЛЬТР ДРОЖАНИЯ: Если сдвинулись меньше чем на 3 метра - ничего не шлем
           if (lastCoords) {
             const dist = getDistance(lastCoords.lat, lastCoords.lng, lat, lng);
-            if (dist < 3) return; // Игнорируем микро-движения
+            if (dist < 5) return;
           }
 
-          console.log('Significant movement detected, updating database...');
           lastCoords = { lat, lng };
 
-          const payload: any = {
+          // 1. Upsert into locations (Realtime persistence)
+          const locationPayload: any = {
             lat, lng,
             speed: loc.coords.speed ?? 0,
             heading: loc.coords.heading ?? 0,
             updated_at: new Date().toISOString(),
           };
 
-          if (animalId) {
-            payload.animal_id = animalId;
-          } else if (user) {
-            payload.user_id = user.id;
+          const conflictCol = resolvedAnimalId ? 'animal_id' : 'user_id';
+          if (resolvedAnimalId) {
+            locationPayload.animal_id = resolvedAnimalId;
+          } else {
+            locationPayload.user_id = user.id;
           }
 
           try {
-            const conflictColumn = animalId ? 'animal_id' : 'user_id';
-            const { error: upsertError } = await supabase
-              .from('locations')
-              .upsert(payload, { onConflict: conflictColumn });
-            
-            if (upsertError) {
-              console.error('GPS Upsert Error:', upsertError.message, upsertError.details);
+            await supabase.from('locations').upsert(locationPayload, { 
+              onConflict: conflictCol,
+              ignoreDuplicates: false 
+            });
+
+            // 2. Insert into animal_locations (History for stats/AI Analysis)
+            if (resolvedAnimalId) {
+               await supabase.from('animal_locations').insert({
+                animal_id: resolvedAnimalId,
+                lat, 
+                lon: lng,
+                speed: loc.coords.speed ?? 0,
+                timestamp: new Date().toISOString()
+              });
             }
           } catch (e: any) {
-            console.error('GPS Network/Exception:', e.message || e);
+            console.error('GPSTracker Error:', e.message || e);
           }
         }
       );
     };
 
-    // Следим за входом/выходом
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (session || animalId) {
-            start();
-        } else {
-            if (positionSub) positionSub.remove();
-        }
+      if (session) {
+        start();
+      } else {
+        if (positionSub) positionSub.remove();
+      }
     });
 
-    start(); // Пробуем запустить сразу
+    start();
 
     return () => {
-        subscription.unsubscribe();
-        if (positionSub) positionSub.remove();
+      subscription.unsubscribe();
+      if (positionSub) positionSub.remove();
     };
   }, [animalId]);
   

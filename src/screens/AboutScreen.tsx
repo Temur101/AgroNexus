@@ -33,7 +33,7 @@ const AboutScreen = ({ navigation }: any) => {
 
   const handleAuthAction = async () => {
     if (user) {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
     } else {
       navigation.navigate('Login');
     }

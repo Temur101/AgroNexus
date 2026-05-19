@@ -116,7 +116,7 @@ export default function MapScreen() {
       // Пытаемся получить координаты быстро
       try {
         const initialLoc = await Promise.race([
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
         ]) as any;
         setUserLoc(initialLoc.coords);
@@ -129,16 +129,11 @@ export default function MapScreen() {
 
       // Запускаем точное слежение
       locationWatcher.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 5000, distanceInterval: 3 },
+        { accuracy: Location.Accuracy.Highest, timeInterval: 2000, distanceInterval: 0 },
         (loc) => {
           const { latitude, longitude, accuracy, heading } = loc.coords;
 
-          // Фильтр точности (Accuracy Filter): Игнорируем если ошибка > 50 метров
-          if (accuracy && accuracy > 50) {
-            console.log('Location ignored: low accuracy', accuracy);
-            return;
-          }
-
+          // Игнорирование погрешности удалено для синхронизации с сырыми данными GPSTracker
           setUserLoc({
             latitude: loc.coords.latitude,
             longitude: loc.coords.longitude,
@@ -155,9 +150,13 @@ export default function MapScreen() {
 
   const fetchFences = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data, error } = await supabase
         .from('geofences')
         .select('*')
+        .eq('owner_id', user.id)
         .order('created_at', { ascending: false })
         .limit(1);
         
@@ -280,7 +279,10 @@ export default function MapScreen() {
           text: 'Удалить',
           style: 'destructive',
           onPress: async () => {
-            await supabase.from('geofences').delete().neq('id', '');
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              await supabase.from('geofences').delete().eq('owner_id', user.id);
+            }
             setSavedGeofence([]);
             setGeofencePoints([]);
             setIsFenceSelected(false);

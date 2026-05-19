@@ -59,6 +59,13 @@ const NotificationsScreen = ({ navigation }: any) => {
         console.log('Location fetch error during accept:', locErr);
       }
 
+      // 0.5 Удаляем предыдущее животное с этим трекером (телефон может быть только одним)
+      try {
+        await supabase.from('animals').delete().eq('tracker_id', request.to_user_id);
+      } catch (err) {
+        console.log('Cleanup error', err);
+      }
+
       // 1. Создаем животное для отправителя
       const { error: animalError } = await supabase.from('animals').insert({
         name: request.animal_name,
@@ -84,8 +91,9 @@ const NotificationsScreen = ({ navigation }: any) => {
           lat: currentLoc.coords.latitude,
           lng: currentLoc.coords.longitude,
           speed: currentLoc.coords.speed || 0,
-          heading: currentLoc.coords.heading || 0
-        });
+          heading: currentLoc.coords.heading || 0,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
       }
 
       // 4. Обновляем статус запроса

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,358 +6,204 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
-  FlatList,
   Platform,
   Alert,
+  ActivityIndicator,
+  RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { User, Activity, Bell, Map, Plus, LogOut } from 'lucide-react-native';
+import { User, Activity, Bell, Map as MapIcon, Plus, LogOut, ChevronRight } from 'lucide-react-native';
 import { COLORS, SPACING, RADIUS, TYPOGRAPHY, SHADOWS } from '../theme/theme';
 import { supabase } from '../../supabase';
-import { useNavigation } from '@react-navigation/native';
-
-interface Animal {
-  id: string;
-  name: string;
-  status: 'online' | 'offline' | 'gps_dead' | 'demo';
-  last_updated: string;
-}
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const HomeScreen = () => {
   const navigation = useNavigation<any>();
   const [user, setUser] = useState<any>(null);
-  const [animals, setAnimals] = useState<Animal[]>([]);
-  const [activeTracking, setActiveTracking] = useState({ count: 0, lastUpdate: 'never' });
+  const [animals, setAnimals] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeCount, setActiveCount] = useState(0);
 
-  useEffect(() => {
-    fetchUser();
-    fetchAnimals();
-    
-    const interval = setInterval(fetchAnimals, 10000); // Update every 10s
-    return () => clearInterval(interval);
+  const fetchData = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setUser(user);
+
+      const { data: animalsData } = await supabase
+        .from('animals')
+        .select('*, locations(updated_at)')
+        .eq('owner_id', user.id)
+        .limit(4);
+
+      if (animalsData) {
+        const now = new Date();
+        const formatted = animalsData.map((a: any) => {
+          const lastLoc = a.locations?.[0]?.updated_at;
+          const isRecent = lastLoc && (now.getTime() - new Date(lastLoc).getTime() < 600000);
+          
+          let status = 'offline';
+          const isPhone = a.tracker_id && (a.tracker_id.includes('-') || a.tracker_id.length > 15);
+
+          if (isPhone) {
+            status = 'demo';
+          } else if (a.tracker_id) {
+            status = isRecent ? 'online' : 'offline';
+          }
+
+          return { ...a, status, last_updated: lastLoc || 'нет данных' };
+        });
+        setAnimals(formatted);
+        setActiveCount(formatted.filter(a => a.status === 'online' || a.status === 'demo').length);
+      }
+    } catch (e) {
+      console.log(e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  const fetchUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    setUser(user);
-  };
-
-  const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      Alert.alert('Ошибка', 'Не удалось выйти из системы');
-    }
-  };
-
-  const fetchAnimals = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data, error } = await supabase
-      .from('animals')
-      .select('*, locations(updated_at)')
-      .eq('owner_id', user.id)
-      .limit(5);
-
-    if (data) {
-      const now = new Date();
-      const formatted: Animal[] = data.map((a: any) => {
-        const lastLoc = a.locations?.[0]?.updated_at;
-        const isRecent = lastLoc && (now.getTime() - new Date(lastLoc).getTime() < 600000); // 10 mins threshold
-        
-        let status: 'online' | 'offline' | 'gps_dead' | 'demo' = 'offline';
-        
-        // Checking if it's a Demo mode (trackerId is a UUID / User ID)
-        const isDemo = a.tracker_id?.length === 36; 
-
-        if (isDemo) {
-          status = 'demo';
-        } else if (a.tracker_id) {
-          status = isRecent ? 'online' : 'gps_dead';
-        }
-
-        return {
-          id: a.id,
-          name: a.name,
-          tracker_id: a.tracker_id,
-          status,
-          last_updated: lastLoc || 'нет данных',
-        };
-      });
-      setAnimals(formatted);
-      setActiveTracking({
-        count: formatted.filter(a => a.status === 'online' || a.status === 'demo').length,
-        lastUpdate: '5 секунд назад',
-      });
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'online': return 'В сети';
-      case 'demo': return 'Демо-режим';
-      case 'gps_dead': return 'GPS не отвечает';
-      default: return 'Офлайн';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'online': return COLORS.green;
-      case 'demo': return COLORS.secondary;
-      case 'gps_dead': return COLORS.red;
-      default: return COLORS.textSecondary;
-    }
-  };
-
-  const renderAnimalItem = ({ item }: { item: Animal }) => (
-    <View style={styles.animalCard}>
-      <View style={styles.animalInfo}>
-        <View style={[styles.statusDot, { backgroundColor: item.status === 'online' ? COLORS.green : COLORS.textSecondary }]} />
-        <Text style={styles.animalName}>{item.name}</Text>
-      </View>
-      <Text style={styles.animalStatusText}>{item.status}</Text>
-    </View>
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData])
   );
 
+  const handleLogout = async () => {
+    Alert.alert('Выход', 'Выйти из системы?', [
+      { text: 'Отмена' },
+      { text: 'Выйти', style: 'destructive', onPress: async () => {
+          await supabase.auth.signOut({ scope: 'local' });
+      }}
+    ]);
+  };
+
+  const getEmoji = (type: string) => {
+    const t = type?.toLowerCase() || '';
+    if (t.includes('коров') || t.includes('бык')) return '🐄';
+    if (t.includes('лошад') || t.includes('конь')) return '🐎';
+    if (t.includes('овц') || t.includes('баран')) return '🐑';
+    if (t.includes('коз')) return '🐐';
+    return '🐄';
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Привет,</Text>
-            <Text style={styles.userName}>{user?.email?.split('@')[0] || 'Фермер'}</Text>
-          </View>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity 
-              style={styles.profileButton} 
-              onPress={() => navigation.navigate('Notifications')}
-            >
-              <Bell size={22} color={COLORS.white} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.profileButton} onPress={handleLogout}>
-              <LogOut size={22} color={COLORS.red} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.profileButton}>
-              <User size={24} color={COLORS.white} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Active Tracking Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Активное отслеживание</Text>
-          <View style={styles.trackingCard}>
-            <View style={styles.trackingIconContainer}>
-              <Activity size={24} color={COLORS.primary} />
-            </View>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor={COLORS.primary} />}
+        >
+          {/* Header */}
+          <View style={styles.header}>
             <View>
-              <Text style={styles.trackingCount}>{activeTracking.count} сейчас активно</Text>
+              <Text style={styles.greeting}>Привет,</Text>
+              <Text style={styles.userName}>{user?.email?.split('@')[0] || 'Фермер'}</Text>
+            </View>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('Notifications')}>
+                <Bell size={22} color={COLORS.white} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
+                <LogOut size={22} color={COLORS.red} />
+              </TouchableOpacity>
             </View>
           </View>
-        </View>
 
-        {/* Animals Section */}
-        <View style={styles.section}>
+          {/* Stats Card */}
+          <LinearGradient colors={['#FF6B00', '#FFBD39']} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.mainStatsCard}>
+            <View>
+                <Text style={styles.statsLabel}>Активные объекты</Text>
+                <Text style={styles.statsValue}>{activeCount}</Text>
+            </View>
+            <TouchableOpacity style={styles.statsMapBtn} onPress={() => navigation.navigate('Map')}>
+                <MapIcon color="#000" size={20} />
+                <Text style={styles.statsMapText}>Карта</Text>
+            </TouchableOpacity>
+          </LinearGradient>
+
+          {/* Animals Quick Access */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Мои животные</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('AddAnimal')}>
-              <Text style={styles.seeAll}>+ Добавить</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Herd')}>
+              <Text style={styles.seeAll}>Все</Text>
             </TouchableOpacity>
           </View>
-          {animals.length > 0 ? (
-            animals.map(animal => (
-              <View key={animal.id} style={styles.animalCard}>
-                <View style={styles.animalInfo}>
-                  <View style={[styles.statusDot, { backgroundColor: getStatusColor(animal.status) }]} />
-                  <Text style={styles.animalName}>{animal.name}</Text>
-                </View>
-                {animal.status !== 'offline' && (
-                  <Text style={[styles.animalStatusText, { color: getStatusColor(animal.status) }]}>
-                    {getStatusText(animal.status)}
-                  </Text>
-                )}
-              </View>
-            ))
+
+          {loading && !refreshing ? (
+            <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} />
           ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>Пока нет животных</Text>
-            </View>
+            animals.map(animal => (
+              <TouchableOpacity 
+                key={animal.id} 
+                style={styles.animalCard}
+                onPress={() => navigation.navigate('AnimalDetails', { animal })}
+              >
+                <View style={styles.animalCardLeft}>
+                    <View style={styles.emojiCircle}>
+                        <Text style={{ fontSize: 20 }}>{getEmoji(animal.type)}</Text>
+                    </View>
+                    <View>
+                        <Text style={styles.animalName}>{animal.name}</Text>
+                        <Text style={styles.animalType}>{animal.type}</Text>
+                    </View>
+                </View>
+                <View style={styles.animalCardRight}>
+                    <View style={[styles.statusTag, { backgroundColor: animal.status === 'online' ? 'rgba(16,185,129,0.1)' : animal.status === 'demo' ? 'rgba(255,189,57,0.1)' : 'rgba(255,255,255,0.05)' }]}>
+                        <Text style={[styles.statusText, { color: animal.status === 'online' ? '#10B981' : animal.status === 'demo' ? COLORS.secondary : COLORS.textSecondary }]}>
+                            {animal.status === 'online' ? 'В сети' : animal.status === 'demo' ? 'Демо' : 'Офлайн'}
+                        </Text>
+                    </View>
+                    <ChevronRight size={20} color={COLORS.textSecondary} />
+                </View>
+              </TouchableOpacity>
+            ))
           )}
-        </View>
 
+          {animals.length === 0 && !loading && (
+              <TouchableOpacity style={styles.addFirstBtn} onPress={() => navigation.navigate('AddAnimal')}>
+                  <Plus color={COLORS.primary} size={24} />
+                  <Text style={styles.addFirstText}>Добавить первое животное</Text>
+              </TouchableOpacity>
+          )}
 
-        {/* Map Button */}
-        <TouchableOpacity 
-          style={styles.mapButton}
-          onPress={() => navigation.navigate('Map')}
-        >
-          <Map size={20} color={COLORS.white} style={{ marginRight: 8 }} />
-          <Text style={styles.mapButtonText}>Открыть карту</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  scrollContent: {
-    padding: SPACING.md,
-    paddingBottom: 40,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.xl,
-    marginTop: Platform.OS === 'ios' ? 0 : 40,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  greeting: {
-    color: COLORS.textSecondary,
-    fontSize: 16,
-    fontFamily: TYPOGRAPHY.fontFamily,
-  },
-  userName: {
-    color: COLORS.white,
-    fontSize: 24,
-    fontWeight: 'bold',
-    fontFamily: TYPOGRAPHY.fontFamily,
-  },
-  profileButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.borderColor,
-  },
-  section: {
-    marginBottom: SPACING.lg,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  sectionTitle: {
-    color: COLORS.white,
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: SPACING.sm,
-  },
-  seeAll: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  trackingCard: {
-    backgroundColor: COLORS.surface,
-    padding: SPACING.md,
-    borderRadius: RADIUS.card,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.borderColor,
-  },
-  trackingIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 107, 0, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: SPACING.md,
-  },
-  trackingCount: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  trackingUpdate: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-  },
-  animalCard: {
-    backgroundColor: COLORS.surface,
-    padding: SPACING.md,
-    borderRadius: RADIUS.card,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-    borderWidth: 1,
-    borderColor: COLORS.borderColor,
-  },
-  animalInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: SPACING.sm,
-  },
-  animalName: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  animalStatusText: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-  },
-  requestCard: {
-    backgroundColor: COLORS.surface,
-    padding: SPACING.md,
-    borderRadius: RADIUS.card,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.borderColor,
-    borderStyle: 'dashed',
-  },
-  requestText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    marginLeft: SPACING.sm,
-  },
-  mapButton: {
-    backgroundColor: COLORS.primary,
-    padding: SPACING.md,
-    borderRadius: RADIUS.button,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: SPACING.md,
-    ...SHADOWS.medium,
-  },
-  mapButtonText: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  emptyState: {
-    padding: SPACING.xl,
-    alignItems: 'center',
-  },
-  emptyText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  safeArea: { flex: 1 },
+  scrollContent: { padding: 24, paddingBottom: 100 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30, marginTop: Platform.OS === 'android' ? 20 : 0 },
+  greeting: { color: COLORS.textSecondary, fontSize: 16 },
+  userName: { color: COLORS.white, fontSize: 28, fontWeight: 'bold' },
+  headerButtons: { flexDirection: 'row', gap: 12 },
+  iconBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  mainStatsCard: { padding: 24, borderRadius: 32, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30, ...SHADOWS.medium },
+  statsLabel: { color: 'rgba(0,0,0,0.6)', fontSize: 14, fontWeight: '600' },
+  statsValue: { color: '#000', fontSize: 36, fontWeight: 'bold' },
+  statsMapBtn: { backgroundColor: '#FFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statsMapText: { color: '#000', fontWeight: 'bold', fontSize: 14 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  seeAll: { color: COLORS.primary, fontWeight: 'bold' },
+  animalCard: { backgroundColor: COLORS.surface, borderRadius: 24, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.03)' },
+  animalCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  emojiCircle: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.03)', justifyContent: 'center', alignItems: 'center' },
+  animalName: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  animalType: { color: COLORS.textSecondary, fontSize: 12 },
+  animalCardRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  statusTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  statusText: { fontSize: 11, fontWeight: 'bold' },
+  addFirstBtn: { height: 80, borderRadius: 24, borderStyle: 'dashed', borderWidth: 1, borderColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 10, marginTop: 20 },
+  addFirstText: { color: COLORS.primary, fontWeight: 'bold' }
 });
 
 export default HomeScreen;
